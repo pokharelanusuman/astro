@@ -52,14 +52,28 @@ signal.signal(signal.SIGINT, graceful_shutdown_handler)
 signal.signal(signal.SIGTERM, graceful_shutdown_handler)
 # ==============================================================================
 
+# Traditional Vedic Sanskrit Mapping Structures
+RASHI_NAMES = {
+    1: "Mesha", 2: "Vrishabha", 3: "Mithuna", 4: "Karka", 
+    5: "Simha", 6: "Kanya", 7: "Tula", 8: "Vrischika", 
+    9: "Dhanu", 10: "Makara", 11: "Kumbha", 12: "Meena"
+}
+
+# Aligned with the Vedic Graha naming standards
 SIGN_LORDS = {
-    1: "Mars", 2: "Venus", 3: "Mercury", 4: "Moon", 
-    5: "Sun", 6: "Mercury", 7: "Venus", 8: "Mars", 
-    9: "Jupiter", 10: "Saturn", 11: "Saturn", 12: "Jupiter"
+    1: "Mangala", 2: "Shukra", 3: "Budha", 4: "Chandra", 
+    5: "Surya", 6: "Budha", 7: "Shukra", 8: "Mangala", 
+    9: "Guru", 10: "Shani", 11: "Shani", 12: "Guru"
+}
+
+PLANET_MAP_TRANSLATION = {
+    "Sun": "Surya", "Moon": "Chandra", "Mercury": "Budha",
+    "Venus": "Shukra", "Mars": "Mangala", "Jupiter": "Guru",
+    "Saturn": "Shani", "Rahu": "Rahu", "Ketu": "Ketu"
 }
 
 def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
-    """Computes precise Vedic coordinates using Swiss Ephemeris Lahiri Ayanamsha."""
+    """Computes precise Vedic coordinates using Swiss Ephemeris Lahiri Ayanamsha with Sanskrit Rashi names."""
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     calc_flag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
 
@@ -112,12 +126,15 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
         planet_sign = int(p_long // 30) + 1
         
         target_house = ((planet_sign - base_asc_sign) % 12) + 1
-        planet_map[target_house].append(name)
+        vedic_name = PLANET_MAP_TRANSLATION.get(name, name)
+        
+        # FIXED: Appending the calculated Sanskrit string token instead of the Western key
+        planet_map[target_house].append(vedic_name)
         
         if name == "Rahu":
             ketu_sign = ((planet_sign + 6 - 1) % 12) + 1
             ketu_house = ((ketu_sign - base_asc_sign) % 12) + 1
-            planet_map[ketu_house].append("Ketu")
+            planet_map[ketu_house].append(PLANET_MAP_TRANSLATION["Ketu"])
 
     house_details = {}
     for h_num in range(1, 13):
@@ -127,6 +144,7 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
         
         house_details[h_num] = {
             "sign_id": sign_val,
+            "rashi_name": RASHI_NAMES[sign_val],
             "lord": SIGN_LORDS[sign_val],
             "classification": "Trikona (Trine)" if is_trine else ("Kendra (Quadrant)" if is_quadrant else "Dusthana" if h_num in [6,8,12] else "Upachaya")
         }
@@ -135,40 +153,44 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
 
 
 def compile_ai_bhava_context(house_number, planet_map, house_details):
-    """Queries local SQLite structural reference parameters to compile rich prompt metadata."""
+    """Compiles local database rules using traditional Sanskrit Rashi nomenclatures for the AI."""
     import sqlite3
     conn = sqlite3.connect('jyotish_core.db')
     cursor = conn.cursor()
     
-    cursor.execute("SELECT sanskrit_name, significations, karaka_planets FROM house_rules WHERE house_number = ?", (house_number,))
+    cursor.execute("SELECT sanskrit_name, significations, karaka_planets, ai_interpretation_framework FROM house_rules WHERE house_number = ?", (house_number,))
     house_row = cursor.fetchone()
     
-    cursor.execute("SELECT planet, exalted_sign_id, debilitated_sign_id FROM planetary_dignities")
+    cursor.execute("SELECT planet, exalted_sign_id, debilitated_sign_id, ai_dignity_directive FROM planetary_dignities")
     dignity_rows = cursor.fetchall()
+    dignity_map = {row[0]: {"exalted": row[1], "debilitated": row[2], "text": row[3]} for row in dignity_rows}
     conn.close()
-    
-    dignity_map = {row[0]: {"exalted": row[1], "debilitated": row[2]} for row in dignity_rows}
+
     live_details = house_details.get(house_number, {})
     current_sign_id = live_details.get('sign_id')
+    current_rashi = live_details.get('rashi_name')
     current_lord = live_details.get('lord')
     planets_present = planet_map.get(house_number, [])
 
-    context = f"--- STRUCTURAL ASTROLOGICAL CONTEXT FOR HOUSE {house_number} ---\n"
+    context = f"=== SYSTEM GROUNDING CONTEXT FOR EVALUATING HOUSE {house_number} ===\n"
     if house_row:
-        context += f"• Sanskrit Bhava Name: {house_row[0]}\n"
-        context += f"• Significations: {house_row[1]}\n"
-        context += f"• Karaka: {house_row[2]}\n"
+        context += f"• Sanskrit Bhava: {house_row[0]}\n"
+        context += f"• Life Domains: {house_row[1]}\n"
+        context += f"• House Karaka: {house_row[2]}\n"
     
-    context += f"• Sign ruling this house: Sign ID {current_sign_id} (Lord: {current_lord})\n"
-    context += f"• Occupying Planets: {', '.join(planets_present) if planets_present else 'None (Empty Bhava)'}\n"
+    context += f"• Active Sign ruling this house: {current_rashi} (Rashi ID {current_sign_id})\n"
+    context += f"• Lord of this Rashi (House Lord): {current_lord}\n"
+    context += f"• Occupying Planets: {', '.join(planets_present) if planets_present else 'None (Empty Bhava)'}\n\n"
     
-    for p in planets_present:
-        if p in dignity_map:
-            if current_sign_id == dignity_map[p]["exalted"]:
-                context += f"   - NOTE: {p} is EXALTED in this house.\n"
-            elif current_sign_id == dignity_map[p]["debilitated"]:
-                context += f"   - NOTE: {p} is DEBILITATED in this house.\n"
-                
+    if planets_present:
+        context += "--- LIVE DIGNITY ASSESSMENT ---\n"
+        for p in planets_present:
+            if p in dignity_map:
+                if current_sign_id == dignity_map[p]["exalted"]:
+                    context += f"• [DIGNITY] {p} is EXALTED in {current_rashi}: {dignity_map[p]['text']}\n"
+                elif current_sign_id == dignity_map[p]["debilitated"]:
+                    context += f"• [DIGNITY] {p} is DEBILITATED in {current_rashi}: {dignity_map[p]['text']}\n"
+                    
     return context
 
 # ==============================================================================
@@ -183,11 +205,10 @@ def home():
 
 @app.route('/database-explorer')
 def database_explorer_page():
-    """Renders the main template frame for the database explorer."""
     return render_template('db_explorer.html')
 
 # ==============================================================================
-# CORE CORE API ENDPOINTS
+# CORE API ENDPOINTS
 # ==============================================================================
 
 @app.route('/api/calculate', methods=['POST'])
@@ -236,15 +257,9 @@ def calculate():
 @app.route('/api/house/<int:house_num>')
 def house_details(house_num):
     try:
-        # In production setup, pull these values out of active frontend request headers or active state records
         asc_deg, planet_map, house_details, tz_name, tz_offset = calculate_swisseph_chart(1992, 12, 17, "04:55", 26.4525, 87.2718)
-        
-        # 1. Gather structural data properties out of local database configurations
         structured_context = compile_ai_bhava_context(house_num, planet_map, house_details)
-        
-        # 2. Fire direct analysis function to local model pipeline
         ai_response = run_direct_astrology_analysis(structured_context)
-        
         return jsonify({"status": "success", "ai_interpretation": ai_response})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -252,7 +267,6 @@ def house_details(house_num):
 
 @app.route('/api/db/schema', methods=['GET'])
 def get_database_schema():
-    """Dynamically reads the schema tables inside our SQLite Jyotish instance."""
     try:
         import sqlite3
         conn = sqlite3.connect('jyotish_core.db')
@@ -260,7 +274,6 @@ def get_database_schema():
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
         conn.close()
-        
         return jsonify({"status": "success", "tables": tables})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -268,7 +281,6 @@ def get_database_schema():
 
 @app.route('/api/db/table-data', methods=['GET'])
 def get_table_data():
-    """Reads real rows dynamically from the selected database table with pagination."""
     try:
         table_name = request.args.get('table', '').strip()
         page = max(1, int(request.args.get('page', 1)))
@@ -316,6 +328,4 @@ def get_table_data():
 
 
 if __name__ == '__main__':
-    # Fixed explicitly to port 5001 to bypass macOS AirPlay listening conflicts
     app.run(debug=True, port=5001)
-

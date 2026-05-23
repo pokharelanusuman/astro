@@ -18,22 +18,29 @@ def run_direct_astrology_analysis(house_context_string):
     # User payload combining everything we gathered
     user_prompt = f"Please provide a deep interpretation based on this structural data:\n\n{house_context_string}"
 
-    # --- CONFIGURATION FOR LOCAL OLLAMA (e.g., Llama 3 or Mistral) ---
+    # --- CONFIGURATION FOR LOCAL OLLAMA ---
     url = "http://localhost:11434/api/generate"
     payload = {
-        "model": "llama3",  # Replace with whichever model you have downloaded locally
+        "model": "mistral:latest",
         "prompt": f"{system_prompt}\n\n{user_prompt}",
         "stream": False
     }
 
+    # FIXED: Perfectly realigned to 4 spaces
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        # INCREASED: timeout changed from 30 to 120 seconds to give your machine breathing room
+        response = requests.post(url, json=payload, timeout=120)
+        
         if response.status_code == 200:
             return response.json().get("response", "Error: No text returned from local AI.")
+        elif response.status_code == 404:
+            return f"AI Generation Error: Model 'mistral:latest' was not found in your local Ollama registry. Run 'ollama pull mistral'."
         else:
             return f"AI Generation Error: Server responded with code {response.status_code}"
             
+    except requests.exceptions.Timeout:
+        return "System Timeout: The local AI model took longer than 120 seconds to respond. Try closing heavy background apps to free up system memory."
     except requests.exceptions.ConnectionError:
-        return "Error: Could not connect to local Ollama instance. Is Ollama running (`ollama run llama3`)?"
+        return "Error: Could not connect to local Ollama instance. Is Ollama running (`ollama run mistral`)?"
     except Exception as e:
         return f"Error executing direct AI analysis: {str(e)}"

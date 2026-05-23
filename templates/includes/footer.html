@@ -1,0 +1,161 @@
+<div class="w-full flex flex-col lg:flex-row gap-6 items-start">
+</div>
+
+<script>
+// 1. Store the initial page calculation passed directly from Flask Jinja2
+// This converts the Python dictionary into a JavaScript object instantly on page load
+window.initialChartPayload = {
+planet_map: {{ planet_map|tojson }},
+house_details: {{ house_details|tojson }}
+};
+
+// Active state tracking parameters
+let currentActiveHouse = 1;
+let localCalculatedChartData = null;
+
+/**
+* Orchestrates cross-switching the tabs across the entire grid and terminal views
+*/
+function switchHouseTab(houseNum) {
+currentActiveHouse = houseNum;
+
+// Reset visual classes across left grid cards
+document.querySelectorAll('.house-grid-card').forEach(card => {
+    card.classList.remove('border-indigo-500', 'ring-2', 'ring-indigo-100', 'bg-white');
+    card.classList.add('border-slate-200', 'bg-slate-50');
+});
+const activeGridCard = document.getElementById(`grid-card-${houseNum}`);
+if (activeGridCard) {
+    activeGridCard.classList.remove('border-slate-200', 'bg-slate-50');
+    activeGridCard.classList.add('border-indigo-500', 'ring-2', 'ring-indigo-100', 'bg-white');
+}
+
+// Adjust states across the horizontal scroll tabs
+document.querySelectorAll('.house-tab-trigger').forEach(btn => {
+    btn.classList.remove('bg-indigo-600', 'text-white', 'border-indigo-600', 'shadow-sm');
+    btn.classList.add('text-slate-500', 'hover:bg-slate-100', 'border-transparent');
+});
+const activeTabButton = document.getElementById(`tab-btn-${houseNum}`);
+if (activeTabButton) {
+    activeTabButton.classList.remove('text-slate-500', 'hover:bg-slate-100', 'border-transparent');
+    activeTabButton.classList.add('bg-indigo-600', 'text-white', 'border-indigo-600', 'shadow-sm');
+}
+
+// Render static descriptions out of local data instantly
+renderStaticTerminalMetadata(houseNum);
+
+// Fire network request down to active Flask pipeline endpoints for deep AI evaluation
+fetchHouseAnalysis(houseNum);
+}
+
+/**
+* Render basic structural definitions from local variable caches onto the panel frame
+*/
+function renderStaticTerminalMetadata(houseNum) {
+if (!localCalculatedChartData) return;
+
+const details = localCalculatedChartData.house_details[houseNum];
+const planets = localCalculatedChartData.planet_map[houseNum] || [];
+
+document.getElementById("active-house-title").innerText = `House ${houseNum}`;
+document.getElementById("active-rashi-title").innerText = `${details.rashi_name} Rashi`;
+document.getElementById("active-classification").innerText = `${details.classification} System Sector`;
+document.getElementById("active-lord").innerText = details.lord;
+
+// Build the occupying planet badges inside the terminal frame
+const grahaPanel = document.getElementById("active-grahas-panel");
+grahaPanel.innerHTML = "";
+if (planets.length === 0) {
+    grahaPanel.innerHTML = `<span class="text-[11px] text-slate-400 italic">No Grahas present in this Bhava</span>`;
+} else {
+    planets.forEach(p => {
+        grahaPanel.innerHTML += `
+            <span class="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 font-mono text-xs font-bold border border-slate-200 shadow-sm">
+                🪐 ${p}
+            </span>`;
+    });
+}
+
+// Quick fallback descriptions for house domains
+const defaultSignifications = {
+    1: "Self-expression, body frame, personality presence, health, beginnings.",
+    2: "Accumulated wealth, immediate family structure, vocal expressions, assets.",
+    3: "Willpower, communication methods, personal drive, initiatives, siblings.",
+    4: "Core inner emotional happiness, motherly relations, home properties.",
+    5: "Intellectual processing, creations, speculative profiles, legacy.",
+    6: "Daily struggles handling, structural health systems, obstacle resolution.",
+    7: "Interpersonal relations, business arrangements, marriage profiles.",
+    8: "Longevity boundaries, deep transformations, research discoveries.",
+    9: "Belief architectures, father interactions, philosophical logic, grace.",
+    10: "Public professions, visibility actions, authority structures, duties.",
+    11: "Realized cash flows, macro network communities, group achievements.",
+    12: "Subconscious release vectors, distant environments, expenses patterns."
+};
+document.getElementById("active-significations").innerText = defaultSignifications[houseNum];
+}
+
+/**
+* Fires calculations payload data over onto Flask core API systems
+*/
+async function fetchHouseAnalysis() {
+const loader = document.getElementById("terminal-loader");
+const outputField = document.getElementById("ai-response-terminal");
+
+if (!loader || !outputField) return;
+
+loader.classList.remove("hidden");
+outputField.innerText = "Connecting to internal processing layers. Compiling prompt schema matrix variables...";
+
+try {
+    const response = await fetch(`/api/house/${currentActiveHouse}`);
+    const data = await response.json();
+    
+    if (data.status === "success") {
+        outputField.innerText = data.ai_interpretation;
+    } else {
+        outputField.innerText = `Error compiling output: ${data.message}`;
+    }
+} catch (err) {
+    outputField.innerText = `System communication failure: ${err.message}`;
+} finally {
+    loader.classList.add("hidden");
+}
+}
+
+/**
+* Intercepts default calculations returns to map left side overview elements cleanly
+*/
+function handleChartCalculationSuccess(payloadData) {
+localCalculatedChartData = payloadData;
+
+// Sync the entire left overview matrix components
+for (let h_num = 1; h_num <= 12; h_num++) {
+    const planets = payloadData.planet_map[h_num] || [];
+    const planetGridArea = document.getElementById(`grid-planets-${h_num}`);
+    
+    if (planetGridArea) {
+        planetGridArea.innerHTML = "";
+        if (planets.length === 0) {
+            planetGridArea.innerHTML = `<span class="text-[9px] font-mono text-slate-400 italic">Empty</span>`;
+        } else {
+            planets.forEach(p => {
+                planetGridArea.innerHTML += `
+                    <span class="px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 font-mono text-[9px] font-bold border border-indigo-100">
+                        ${p}
+                    </span>`;
+            });
+        }
+    }
+}
+
+// Default trigger execution onto our primary Lagna container
+switchHouseTab(1);
+}
+
+// Automatically populate and boot the dashboard state using the initial page loads
+document.addEventListener("DOMContentLoaded", () => {
+if (window.initialChartPayload && window.initialChartPayload.house_details) {
+    handleChartCalculationSuccess(window.initialChartPayload);
+}
+});
+</script>
