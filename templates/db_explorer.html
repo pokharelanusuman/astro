@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include 'includes/head.html' %}
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+    {% include 'includes/header.html' %}
+
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col md:flex-row gap-6">
+        
+        <div class="w-full md:w-64 flex flex-col gap-3">
+            <h2 class="text-xs font-mono font-bold uppercase tracking-widest text-slate-500 px-2">Database Architecture</h2>
+            <div id="table-tabs-list" class="flex flex-col gap-1.5 bg-slate-900/40 border border-slate-800/80 p-3 rounded-2xl">
+                <div class="text-xs font-mono text-slate-400 p-2 animate-pulse">Loading schema blueprints...</div>
+            </div>
+        </div>
+
+        <div class="flex-1 bg-slate-900/20 border border-slate-800/60 rounded-3xl p-6 shadow-2xl flex flex-col justify-between min-h-[500px]">
+            <div>
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 pb-4 border-b border-slate-900">
+                    <div>
+                        <span class="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-widest block mb-0.5">Active Dataset Instance</span>
+                        <h2 id="active-table-title" class="text-xl font-bold tracking-tight text-white font-mono">Select a table...</h2>
+                    </div>
+                    <div class="text-xs text-slate-400 font-mono bg-slate-900/60 border border-slate-800/80 px-3 py-1.5 rounded-xl">
+                        Total Count: <span id="telemetry-total-rows" class="text-emerald-400 font-bold">0</span> rows
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto border border-slate-900 rounded-xl bg-slate-950/40">
+                    <table class="w-full text-left border-collapse text-xs font-mono">
+                        <thead>
+                            <tr id="table-header-row" class="bg-slate-900/80 border-b border-slate-800 text-slate-400 uppercase tracking-wider font-bold">
+                                </tr>
+                        </thead>
+                        <tbody id="table-body-rows" class="divide-y divide-slate-900 text-slate-300">
+                            <tr>
+                                <td class="p-8 text-center text-slate-500 italic">No table active. Select a database segment from the left.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-slate-900 flex flex-col sm:flex-row justify-between items-center gap-4 text-xs font-mono">
+                <span class="text-slate-500">
+                    Showing Page <span id="page-current-index" class="text-slate-300 font-bold">0</span> of <span id="page-total-index" class="text-slate-300 font-bold">0</span>
+                </span>
+                <div class="flex items-center gap-2">
+                    <button id="btn-prev-page" onclick="changePage(-1)" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 disabled:hover:bg-slate-900 rounded-xl text-slate-300 font-bold transition-all duration-150" disabled>
+                        ◀ Previous
+                    </button>
+                    <button id="btn-next-page" onclick="changePage(1)" class="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-slate-800 disabled:hover:bg-slate-900 rounded-xl text-slate-300 font-bold transition-all duration-150" disabled>
+                        Next ▶
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentActiveTable = "";
+        let currentActivePage = 1;
+
+        async function loadSchema() {
+            try {
+                const res = await fetch('/api/db/schema');
+                const data = await res.json();
+                if(data.status === 'success') {
+                    const container = document.getElementById('table-tabs-list');
+                    container.innerHTML = data.tables.map(table => `
+                        <button onclick="switchTable('${table}')" 
+                                id="tab-${table}"
+                                class="w-full text-left px-4 py-2 rounded-xl text-xs font-mono font-medium transition-all duration-150 flex items-center justify-between group bg-transparent hover:bg-slate-900 text-slate-400 hover:text-white">
+                            <span>📋 ${table}</span>
+                            <span class="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400 font-bold">VIEW</span>
+                        </button>
+                    `).join('');
+                    
+                    if(data.tables.length > 0) {
+                        switchTable(data.tables[0]);
+                    }
+                }
+            } catch (err) { console.error("Failed loading target database structure:", err); }
+        }
+
+        async function switchTable(tableName) {
+            if(!tableName) return;
+            
+            // Toggle dynamic background highlighting between navigation tabs
+            if(currentActiveTable) {
+                const oldTab = document.getElementById(`tab-${currentActiveTable}`);
+                if(oldTab) oldTab.classList.remove('bg-indigo-600/10', 'text-indigo-400', 'border', 'border-indigo-500/20');
+            }
+            
+            currentActiveTable = tableName;
+            currentActivePage = 1;
+            
+            const newTab = document.getElementById(`tab-${tableName}`);
+            if(newTab) newTab.classList.add('bg-indigo-600/10', 'text-indigo-400', 'border', 'border-indigo-500/20');
+            
+            document.getElementById('active-table-title').textContent = tableName.toUpperCase();
+            fetchTableData();
+        }
+
+        async function fetchTableData() {
+            try {
+                const res = await fetch(`/api/db/table-data?table=${currentActiveTable}&page=${currentActivePage}&limit=10`);
+                const data = await res.json();
+                
+                if(data.status === 'success') {
+                    // 1. Redraw Headers
+                    const headerRow = document.getElementById('table-header-row');
+                    headerRow.innerHTML = data.columns.map(col => `<th class="px-4 py-3 border-b border-slate-800 font-bold">${col}</th>`).join('');
+                    
+                    // 2. Redraw Body Rows
+                    const bodyRows = document.getElementById('table-body-rows');
+                    if(data.rows.length === 0) {
+                        bodyRows.innerHTML = `<tr><td colspan="${data.columns.length}" class="p-8 text-center text-slate-500 italic">Empty table instance. No data recorded.</td></tr>`;
+                    } else {
+                        bodyRows.innerHTML = data.rows.map(row => `
+                            <tr class="hover:bg-slate-900/40 transition-colors">
+                                ${data.columns.map(col => `<td class="px-4 py-2.5 max-w-[240px] truncate text-slate-300">${row[col] !== null ? row[col] : '<span class="text-slate-600">NULL</span>'}</td>`).join('')}
+                            </tr>
+                        `).join('');
+                    }
+
+                    // 3. Update Pagination Controls Telemetry
+                    const pag = data.pagination;
+                    document.getElementById('telemetry-total-rows').textContent = pag.total_rows;
+                    document.getElementById('page-current-index').textContent = pag.current_page;
+                    document.getElementById('page-total-index').textContent = pag.total_pages;
+                    
+                    document.getElementById('btn-prev-page').disabled = !pag.has_prev;
+                    document.getElementById('btn-next-page').disabled = !pag.has_next;
+                }
+            } catch (err) { console.error("Row buffering initialization exception error:", err); }
+        }
+
+        function changePage(direction) {
+            currentActivePage += direction;
+            fetchTableData();
+        }
+
+        window.addEventListener('DOMContentLoaded', loadSchema);
+    </script>
+</body>
+</html>

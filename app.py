@@ -206,5 +206,218 @@ def house_details(house_num):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+@app.route('/database-explorer')
+def database_explorer_page():
+    """Renders the main template frame for the database explorer."""
+    return render_template('db_explorer.html')
+
+
+@app.route('/api/db/schema', methods=['GET'])
+def get_database_schema():
+    """
+    Dynamically scans the database to list all existing tables.
+    Modify the inner logic if you use SQLAlchemy, raw SQLite, or PostgreSQL.
+    """
+    try:
+        # --- EXAMPLE FOR RAW SQLITE/DATABASE INSPECTION ---
+        # import sqlite3
+        # conn = sqlite3.connect('your_database.db')
+        # cursor = conn.cursor()
+        # cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        # tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
+        # conn.close()
+        
+        # Fallback dummy list for structural illustration/testing
+        tables = ["users", "calculation_history", "crewai_logs", "locations_cache"]
+        
+        return jsonify({"status": "success", "tables": tables})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+
+@app.route('/api/db/table-data', methods=['GET'])
+def get_table_data():
+    """Returns dynamic columns, rows, and structural pagination metrics based on selected table."""
+    try:
+        table_name = request.args.get('table', '').strip()
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = max(1, int(request.args.get('limit', 10)))
+        
+        if not table_name:
+            return jsonify({"status": "error", "message": "No table name provided"}), 400
+
+        # 1. Define distinct, real schemas for each table configuration
+        if table_name == "users":
+            columns = ["user_id", "profile_name", "birth_place", "created_at"]
+            total_rows = 12
+            
+            # Generate realistic user rows
+            dummy_rows = [
+                {"user_id": 1, "profile_name": "Anusuman", "birth_place": "Biratnagar", "created_at": "2026-05-20 10:14"},
+                {"user_id": 2, "profile_name": "Astro Profile Beta", "birth_place": "Kathmandu", "created_at": "2026-05-21 14:22"},
+                {"user_id": 3, "profile_name": "Client Target A", "birth_place": "Dubai", "created_at": "2026-05-22 09:05"},
+            ]
+            # Pad the pagination simulation
+            for i in range(4, total_rows + 1):
+                dummy_rows.append({"user_id": i, "profile_name": f"Anonymous Test #{i}", "birth_place": "Global Cache", "created_at": "2026-05-23 11:00"})
+
+        elif table_name == "calculation_history":
+            columns = ["calc_id", "timestamp", "input_date", "input_time", "resolved_lagna", "timezone"]
+            total_rows = 24
+            dummy_rows = []
+            
+            start_id = ((page - 1) * per_page) + 1
+            end_id = min(start_id + per_page, total_rows + 1)
+            for idx in range(start_id, end_id):
+                dummy_rows.append({
+                    "calc_id": idx,
+                    "timestamp": "2026-05-23 21:21",
+                    "input_date": "1992-12-17",
+                    "input_time": "04:55",
+                    "resolved_lagna": f"227.412° (Scorpio)",
+                    "timezone": "Asia/Kathmandu (UTC+5.8)"
+                })
+
+        elif table_name == "crewai_logs":
+            columns = ["log_id", "uuid_token", "target_house", "created_at", "status_flag"]
+            total_rows = 45
+            dummy_rows = []
+            
+            start_id = ((page - 1) * per_page) + 1
+            end_id = min(start_id + per_page, total_rows + 1)
+            for idx in range(start_id, end_id):
+                dummy_rows.append({
+                    "log_id": idx,
+                    "uuid_token": f"TX-100{idx}",
+                    "target_house": f"House {((idx - 1) % 12) + 1}",
+                    "created_at": "2026-05-23 21:21",
+                    "status_flag": "SUCCESS" if idx % 5 != 0 else "FAILED"
+                })
+
+        elif table_name == "locations_cache":
+            columns = ["cache_id", "queried_place", "resolved_lat", "resolved_lon", "hit_count"]
+            total_rows = 8
+            dummy_rows = [
+                {"cache_id": 1, "queried_place": "Biratnagar", "resolved_lat": 26.4525, "resolved_lon": 87.2718, "hit_count": 14},
+                {"cache_id": 2, "queried_place": "Dubai Festival City", "resolved_lat": 25.2226, "resolved_lon": 55.3591, "hit_count": 32},
+                {"cache_id": 3, "queried_place": "Burjuman, Dubai", "resolved_lat": 25.2532, "resolved_lon": 55.3034, "hit_count": 9},
+                {"cache_id": 4, "queried_place": "Kathmandu", "resolved_lat": 27.7172, "resolved_lon": 85.3240, "hit_count": 5}
+            ]
+
+        # Slice the rows based on the page request parameters
+        import math
+        total_pages = max(1, math.ceil(total_rows / per_page))
+        
+        # Only slice if we haven't manually pre-sliced the data loop chunks
+        if table_name in ["users", "locations_cache"]:
+            sliced_rows = dummy_rows[(page - 1) * per_page : page * per_page]
+        else:
+            sliced_rows = dummy_rows
+
+        return jsonify({
+            "status": "success",
+            "table": table_name,
+            "columns": columns,
+            "rows": sliced_rows,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_rows": total_rows,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/database-explorer')
+def database_explorer_page():
+    """Renders the main template frame for the database explorer."""
+    return render_template('db_explorer.html')
+
+
+@app.route('/api/db/schema', methods=['GET'])
+def get_database_schema():
+    """
+    Dynamically scans the database to list all existing tables.
+    Modify the inner logic if you use SQLAlchemy, raw SQLite, or PostgreSQL.
+    """
+    try:
+        # --- EXAMPLE FOR RAW SQLITE/DATABASE INSPECTION ---
+        # import sqlite3
+        # conn = sqlite3.connect('your_database.db')
+        # cursor = conn.cursor()
+        # cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        # tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
+        # conn.close()
+        
+        # Fallback dummy list for structural illustration/testing
+        tables = ["users", "calculation_history", "crewai_logs", "locations_cache"]
+        
+        return jsonify({"status": "success", "tables": tables})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/db/table-data', methods=['GET'])
+def get_table_data():
+    """Returns dynamic columns, rows, and structural pagination metrics."""
+    try:
+        table_name = request.args.get('table', '').strip()
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = max(1, int(request.args.get('limit', 10)))
+        
+        if not table_name:
+            return jsonify({"status": "error", "message": "No table name provided"}), 400
+
+        # --- EXAMPLE ARCHITECTURE FOR DYNAMIC FETCH & PAGINATION ---
+        # offset = (page - 1) * per_page
+        # cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+        # total_rows = cursor.fetchone()[0]
+        # cursor.execute(f"PRAGMA table_info({table_name})") # For column headers
+        # columns = [col[1] for col in cursor.fetchall()]
+        # cursor.execute(f"SELECT * FROM {table_name} LIMIT {per_page} OFFSET {offset}")
+        # rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        # Simulated mockup telemetry profiles for initial verification
+        columns = ["id", "uuid_token", "created_at", "status_flag"] if "log" in table_name else ["id", "meta_label", "payload_string", "execution_ms"]
+        
+        # Create mockup rows to verify pagination calculations
+        total_rows = 45
+        dummy_rows = []
+        start_id = ((page - 1) * per_page) + 1
+        end_id = min(start_id + per_page, total_rows + 1)
+        
+        for idx in range(start_id, end_id):
+            if "log" in table_name:
+                dummy_rows.append({"id": idx, "uuid_token": f"TX-{1000+idx}", "created_at": "2026-05-23", "status_flag": "SUCCESS"})
+            else:
+                dummy_rows.append({"id": idx, "meta_label": f"Record Matrix Slot {idx}", "payload_string": "Data Blob Data...", "execution_ms": 14.2})
+
+        import math
+        total_pages = math.ceil(total_rows / per_page)
+
+        return jsonify({
+            "status": "success",
+            "table": table_name,
+            "columns": columns,
+            "rows": dummy_rows,
+            "pagination": {
+                "current_page": page,
+                "per_page": per_page,
+                "total_rows": total_rows,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)
