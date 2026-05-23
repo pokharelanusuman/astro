@@ -123,7 +123,38 @@
             fetchTableData();
         }
 
-        // Ensure the page is fully loaded before running
+        //fetching data of knowledge observer and writing
+        async function refreshKnowledgeObserver() {
+    try {
+        console.log("Fetching knowledge state...");
+        const response = await fetch('/api/knowledge-state');
+        
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const state = await response.json();
+        console.log("Received state:", state);
+
+        // Update Depth
+        const depthBadge = document.getElementById('ai-depth-badge');
+        if (depthBadge) depthBadge.innerText = `Depth: ${state.current_depth || 1}`;
+        
+        // Update Mastered Concepts
+        const masteredList = document.getElementById('mastered-list');
+        if (masteredList && state.known_concepts) {
+            masteredList.innerHTML = state.known_concepts.map(c => `<li>${c}</li>`).join('');
+        }
+        
+        // Update Needed Learning
+        const neededList = document.getElementById('needed-list');
+        if (neededList && state.next_learning_targets) {
+            neededList.innerHTML = state.next_learning_targets.map(c => `<li>${c}</li>`).join('');
+        }
+    } catch (err) {
+        console.error("Critical error in refreshKnowledgeObserver:", err);
+    }
+}
+
+// Ensure the page is fully loaded before running
 window.addEventListener('DOMContentLoaded', () => {
     loadSchema();
     // Small delay to ensure the DOM is ready
@@ -195,37 +226,6 @@ window.addEventListener('DOMContentLoaded', () => {
     loadSchema();
     refreshKnowledgeObserver(); // Now it loads on page open
 });
-
-        //fetching data of knowledge observer and writing
-        async function refreshKnowledgeObserver() {
-    try {
-        console.log("Fetching knowledge state...");
-        const response = await fetch('/api/knowledge-state');
-        
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
-        const state = await response.json();
-        console.log("Received state:", state);
-
-        // Update Depth
-        const depthBadge = document.getElementById('ai-depth-badge');
-        if (depthBadge) depthBadge.innerText = `Depth: ${state.current_depth || 1}`;
-        
-        // Update Mastered Concepts
-        const masteredList = document.getElementById('mastered-list');
-        if (masteredList && state.known_concepts) {
-            masteredList.innerHTML = state.known_concepts.map(c => `<li>${c}</li>`).join('');
-        }
-        
-        // Update Needed Learning
-        const neededList = document.getElementById('needed-list');
-        if (neededList && state.next_learning_targets) {
-            neededList.innerHTML = state.next_learning_targets.map(c => `<li>${c}</li>`).join('');
-        }
-    } catch (err) {
-        console.error("Critical error in refreshKnowledgeObserver:", err);
-    }
-}
     </script>
 </body>
 </html>

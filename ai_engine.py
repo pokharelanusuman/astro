@@ -1,46 +1,46 @@
-import os
 import requests
 import json
+import re # 1. Import re
+from knowledge_manager import get_system_prompt_extension, update_knowledge_from_ai
 
 def run_direct_astrology_analysis(house_context_string):
-    """
-    Sends the compiled database and calculation context directly to a local 
-    Ollama instance (or an external API) without the overhead of CrewAI agents.
-    """
-    # System instructions to keep the model grounded in real data
-    system_prompt = (
-        "You are an expert Vedic Astrologer (Jyotish Master). Your task is to interpret "
-        "the provided astrological house context. Use the structural rules, planetary positions, "
-        "and dignity flags provided in the context. Be precise, clear, and objective. "
-        "Do not invent data outside the provided parameters."
-    )
-    
-    # User payload combining everything we gathered
+    # ... (Keep your prompt setup code as is)
+    memory_extension = get_system_prompt_extension()
+    base_system_prompt = "You are an expert Jyotish Master..."
+    full_system_prompt = f"{base_system_prompt}\n\n{memory_extension}"
     user_prompt = f"Please provide a deep interpretation based on this structural data:\n\n{house_context_string}"
 
-    # --- CONFIGURATION FOR LOCAL OLLAMA ---
     url = "http://localhost:11434/api/generate"
     payload = {
         "model": "mistral:latest",
-        "prompt": f"{system_prompt}\n\n{user_prompt}",
+        "prompt": f"{full_system_prompt}\n\n{user_prompt}",
         "stream": False
     }
 
-    # FIXED: Perfectly realigned to 4 spaces
     try:
-        # INCREASED: timeout changed from 30 to 120 seconds to give your machine breathing room
         response = requests.post(url, json=payload, timeout=120)
         
         if response.status_code == 200:
-            return response.json().get("response", "Error: No text returned from local AI.")
-        elif response.status_code == 404:
-            return f"AI Generation Error: Model 'mistral:latest' was not found in your local Ollama registry. Run 'ollama pull mistral'."
-        else:
-            return f"AI Generation Error: Server responded with code {response.status_code}"
+            full_text = response.json().get("response", "Error: No text returned.")
             
-    except requests.exceptions.Timeout:
-        return "System Timeout: The local AI model took longer than 120 seconds to respond. Try closing heavy background apps to free up system memory."
-    except requests.exceptions.ConnectionError:
-        return "Error: Could not connect to local Ollama instance. Is Ollama running (`ollama run mistral`)?"
+            # 2. Extract and Strip 'NEEDED_LEARNING'
+            # This regex looks for 'NEEDED_LEARNING:' and everything after it
+            pattern = r"NEEDED_LEARNING:(.*)"
+            match = re.search(pattern, full_text, re.DOTALL)
+            
+            cleaned_analysis = full_text
+            if match:
+                # Save the findings to your knowledge manager
+                update_knowledge_from_ai(match.group(0))
+                # Remove the section from the text that goes to the UI
+                cleaned_analysis = re.sub(pattern, "", full_text, flags=re.DOTALL).strip()
+            
+            return cleaned_analysis
+        
+        elif response.status_code == 404:
+            return "AI Generation Error: Model 'mistral:latest' not found."
+        else:
+            return f"AI Generation Error: Code {response.status_code}"
+            
     except Exception as e:
         return f"Error executing direct AI analysis: {str(e)}"

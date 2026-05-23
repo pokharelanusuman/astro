@@ -1,0 +1,13 @@
+{
+    "known_concepts": [
+        "rashi_fundamentals",
+        "house_rulership"
+    ],
+    "current_depth": 1,
+    "mastery_summary": "Understands basics of 12 Houses and Rashi lords.",
+    "next_learning_targets": [
+        "planetary_dignity",
+        "aspect_drishti"
+    ],
+    "last_audit_flag": "AI_REQUESTED_UPGRADE"
+}

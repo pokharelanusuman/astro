@@ -3,9 +3,11 @@ import sys
 import signal
 import psutil
 import warnings
+import json 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template, jsonify, request
+
 
 import swisseph as swe
 from timezonefinder import TimezoneFinder
@@ -207,6 +209,22 @@ def home():
 def database_explorer_page():
     return render_template('db_explorer.html')
 
+# --- NEW: Knowledge State Route ---
+@app.route('/api/knowledge-state')
+def get_knowledge_state():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_dir, "ai_knowledge_base.json")
+    """Serves the AI's current knowledge and learning needs to the frontend."""
+    try:
+        if os.path.exists('ai_knowledge_base.json'):
+            with open('ai_knowledge_base.json', 'r') as f:
+                data = json.load(f)
+            return jsonify(data)
+        return jsonify({"error": "Knowledge base not found"}), 404
+    except Exception as e:
+        print(f"DEBUG: Error reading JSON: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # ==============================================================================
 # CORE API ENDPOINTS
 # ==============================================================================
@@ -264,19 +282,20 @@ def house_details(house_num):
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
 @app.route('/api/db/schema', methods=['GET'])
 def get_database_schema():
     try:
         import sqlite3
         conn = sqlite3.connect('jyotish_core.db')
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
+        # This query gets ALL tables in your database
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+        tables = [row[0] for row in cursor.fetchall()]
         conn.close()
         return jsonify({"status": "success", "tables": tables})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
 
 
 @app.route('/api/db/table-data', methods=['GET'])
@@ -325,7 +344,5 @@ def get_table_data():
         })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
 if __name__ == '__main__':
     app.run(debug=True, port=5001)
