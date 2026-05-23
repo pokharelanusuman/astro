@@ -2,7 +2,8 @@ import os
 import sys
 import signal
 import psutil
-from datetime import datetime
+import warnings
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template, jsonify, request
 from crew_engine import run_astrology_crew_analysis
@@ -13,31 +14,46 @@ from geopy.geocoders import Nominatim
 
 app = Flask(__name__)
 tf = TimezoneFinder()
-# User-Agent configuration complies with OpenStreetMap foundational usage policies
 geolocator = Nominatim(user_agent="jyotish_engine_core_v2")
 
 # ==============================================================================
-# DEFENSIVE PROCESS GUARD RAILS
+# ENHANCED DEFENSIVE PROCESS GUARD RAILS (Fixes Semaphore Leaks)
 # ==============================================================================
 def graceful_shutdown_handler(signum, frame):
-    import warnings
-    warnings.filterwarnings("ignore", category=UserWarning, message=".*resource_tracker.*")
+    """
+    Interceptions signal terminations (Ctrl+C). Forcefully kills orphan background 
+    CrewAI multiprocess workers and silences tracking resource garbage collections.
+    """
+    # 1. Silence the noisy resource_tracker warnings right before exiting
+    warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
+    
     try:
         current_process = psutil.Process(os.getpid())
+        # Find all background children processes spawned by CrewAI/LiteLLM
         children = current_process.children(recursive=True)
+        
         for child in children:
             try:
-                if "resource_tracker" in child.name(): continue
-                child.terminate()
-            except (psutil.NoSuchProcess, psutil.AccessDenied): pass
-    except Exception: pass
+                # Do not disrupt the resource tracker while it's attempting to unwind
+                if "resource_tracker" in child.name(): 
+                    continue
+                child.terminate()  # Terminate worker cleanly
+            except (psutil.NoSuchProcess, psutil.AccessDenied): 
+                pass
+                
+        # Wait briefly for standard background process de-allocations
+        psutil.wait_procs(children, timeout=0.5)
+    except Exception: 
+        pass
+    
+    # Exit with a standard success flag
     os._exit(0)
 
+# Bind system interruption calls directly to our process interceptor sweep
 signal.signal(signal.SIGINT, graceful_shutdown_handler)
 signal.signal(signal.SIGTERM, graceful_shutdown_handler)
 # ==============================================================================
 
-# Classical Vedic Mapping Matrix for Sign Rulers (Lords)
 SIGN_LORDS = {
     1: "Mars", 2: "Venus", 3: "Mercury", 4: "Moon", 
     5: "Sun", 6: "Mercury", 7: "Venus", 8: "Mars", 
@@ -47,14 +63,11 @@ SIGN_LORDS = {
 def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
     """
     Computes precise Vedic coordinates using Swiss Ephemeris Lahiri Ayanamsha.
-    Converts Local Time to Universal Time (UT) using geographic coordinates 
-    to eliminate the 1-house offset bug.
+    Converts Local Time to Universal Time (UT) using geographic coordinates.
     """
-    # Initialize Sidereal Lahiri calculation frameworks immediately
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     calc_flag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
 
-    # Parse local hour and minutes cleanly
     try:
         if ":" in str(hour_str):
             h_part, m_part = map(int, hour_str.split(":"))
@@ -65,22 +78,18 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
     except Exception:
         h_part, m_part = 4, 0
 
-    # 1. Resolve geographic timezone to calculate historical UTC offset
     tz_name = tf.timezone_at(lng=lon, lat=lat) or "UTC"
     try:
         local_dt = datetime(year, month, day, h_part, m_part, 0, tzinfo=ZoneInfo(tz_name))
         raw_offset_seconds = local_dt.utcoffset().total_seconds()
         tz_offset_hours = raw_offset_seconds / 3600.0
     except Exception:
-        tz_offset_hours = 5.75 # Standard fallback for Nepal if zone lookup fails
+        tz_offset_hours = 5.75
 
-    # 2. CRITICAL FIX: Subtract Local Time Offset to pass true Universal Time (UT) to Swiss Ephemeris
     local_decimal_hours = h_part + (m_part / 60.0)
     ut_decimal_hours = local_decimal_hours - tz_offset_hours
 
-    # Handle day roll-overs if UT goes below 00:00 or above 24:00
     ut_dt_calc = datetime(year, month, day, 0, 0, 0)
-    from datetime import timedelta
     adjusted_ut_dt = ut_dt_calc + timedelta(hours=ut_decimal_hours)
     
     year_ut = adjusted_ut_dt.year
@@ -88,13 +97,11 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
     day_ut = adjusted_ut_dt.day
     final_ut_hours = adjusted_ut_dt.hour + (adjusted_ut_dt.minute / 60.0) + (adjusted_ut_dt.second / 3600.0)
 
-    # 3. Generate precise Julian Day using true UT values
     julian_day_ut = swe.julday(year_ut, month_ut, day_ut, final_ut_hours)
 
-    # 4. Compute true Ascendant degree
     cusps, ascmc = swe.houses_ex(julian_day_ut, lat, lon, b'W', calc_flag)
     asc_deg = ascmc[0] 
-    base_asc_sign = int(asc_deg // 30) + 1  # 8 = Scorpio / Vrischika
+    base_asc_sign = int(asc_deg // 30) + 1
 
     PLANET_IDS = {
         "Sun": swe.SUN, "Moon": swe.MOON, "Mercury": swe.MERCURY,
@@ -104,23 +111,19 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
 
     planet_map = {i: [] for i in range(1, 13)}
 
-    # 5. Map planet longitudes directly to Whole Sign houses relative to Lagna
     for name, p_id in PLANET_IDS.items():
         res, ret_flag = swe.calc_ut(julian_day_ut, p_id, calc_flag)
         p_long = res[0]
         planet_sign = int(p_long // 30) + 1
         
-        # Whole Sign house positioning relative to the Ascendant sign block
         target_house = ((planet_sign - base_asc_sign) % 12) + 1
         planet_map[target_house].append(name)
         
-        # Place Ketu exactly 180 degrees (6 signs away) from Rahu
         if name == "Rahu":
             ketu_sign = ((planet_sign + 6 - 1) % 12) + 1
             ketu_house = ((ketu_sign - base_asc_sign) % 12) + 1
             planet_map[ketu_house].append("Ketu")
 
-    # 6. Build sign details shifting sequentially from House 1 (Ascendant Sign)
     house_details = {}
     for h_num in range(1, 13):
         sign_val = ((base_asc_sign + h_num - 2) % 12) + 1
@@ -138,7 +141,6 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
 
 @app.route('/')
 def home():
-    # Base fallback initialization (1992-12-17 @ 04:55 AM Local time in Biratnagar)
     asc_deg, planet_map, house_details, tz_name, tz_offset = calculate_swisseph_chart(1992, 12, 17, "04:55", 26.4525, 87.2718)
     return render_template('index.html', asc_deg=asc_deg, planet_map=planet_map, house_details=house_details, tz_name=tz_name, tz_offset=tz_offset)
 
@@ -156,7 +158,6 @@ def calculate():
 
         display_place = "Unknown Location"
 
-        # Handle place lookup dynamically via geopy geocoding engine
         if place_name:
             location = geolocator.geocode(place_name, addressdetails=True)
             if location:
