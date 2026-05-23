@@ -6,35 +6,28 @@ import warnings
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from flask import Flask, render_template, jsonify, request
-from crew_engine import run_astrology_crew_analysis
 
 import swisseph as swe
 from timezonefinder import TimezoneFinder
 from geopy.geocoders import Nominatim
+
+# Import streamlined direct AI connector engine
+from ai_engine import run_direct_astrology_analysis
 
 app = Flask(__name__)
 tf = TimezoneFinder()
 geolocator = Nominatim(user_agent="jyotish_engine_core_v2")
 
 # ==============================================================================
-# ULTIMATE PROCESS REAPER (Eliminates the final Werkzeug Manager Semaphore Leak)
+# ULTIMATE PROCESS REAPER (Optimized for Local Network Binding)
 # ==============================================================================
 def graceful_shutdown_handler(signum, frame):
-    """
-    Forcibly sweeps the entire operating system process group matching this terminal
-    session. This stops Flask's debug monitor process and CrewAI background loops 
-    simultaneously, ensuring 0 leaked semaphores at exit.
-    """
-    # 1. Broad filter suppression to ensure warning text won't output during cleanup
+    """Suppresses multiprocessing warning messages and drops port bindings cleanly."""
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
-    
     try:
         current_pid = os.getpid()
-        # Find all sibling and worker processes running within our localized tree
         parent = psutil.Process(current_pid)
         children = parent.children(recursive=True)
-        
-        # Terminate everything in the child tree first
         for child in children:
             try:
                 if "resource_tracker" in child.name():
@@ -42,17 +35,19 @@ def graceful_shutdown_handler(signum, frame):
                 child.terminate()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-                
-        psutil.wait_procs(children, timeout=0.2)
+        psutil.wait_procs(children, timeout=0.1)
     except Exception:
         pass
 
-    # 2. CRITICAL TRICK: Kill the entire process group (PGID) at once.
-    # This terminates the hidden parent Flask reloader process, forcing a clean exit.
-    os.killpg(os.getpgrp(), signal.SIGKILL)
+    try:
+        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            os.kill(os.getpid(), signal.SIGKILL)
+        else:
+            os.killpg(os.getpgrp(), signal.SIGTERM)
+    except Exception:
+        pass
     sys.exit(0)
 
-# Bind structural terminal interrupt commands to our global group-killer
 signal.signal(signal.SIGINT, graceful_shutdown_handler)
 signal.signal(signal.SIGTERM, graceful_shutdown_handler)
 # ==============================================================================
@@ -64,10 +59,7 @@ SIGN_LORDS = {
 }
 
 def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
-    """
-    Computes precise Vedic coordinates using Swiss Ephemeris Lahiri Ayanamsha.
-    Converts Local Time to Universal Time (UT) using geographic coordinates.
-    """
+    """Computes precise Vedic coordinates using Swiss Ephemeris Lahiri Ayanamsha."""
     swe.set_sid_mode(swe.SIDM_LAHIRI)
     calc_flag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
 
@@ -142,17 +134,66 @@ def calculate_swisseph_chart(year, month, day, hour_str, lat, lon):
     return asc_deg, planet_map, house_details, tz_name, tz_offset_hours
 
 
+def compile_ai_bhava_context(house_number, planet_map, house_details):
+    """Queries local SQLite structural reference parameters to compile rich prompt metadata."""
+    import sqlite3
+    conn = sqlite3.connect('jyotish_core.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT sanskrit_name, significations, karaka_planets FROM house_rules WHERE house_number = ?", (house_number,))
+    house_row = cursor.fetchone()
+    
+    cursor.execute("SELECT planet, exalted_sign_id, debilitated_sign_id FROM planetary_dignities")
+    dignity_rows = cursor.fetchall()
+    conn.close()
+    
+    dignity_map = {row[0]: {"exalted": row[1], "debilitated": row[2]} for row in dignity_rows}
+    live_details = house_details.get(house_number, {})
+    current_sign_id = live_details.get('sign_id')
+    current_lord = live_details.get('lord')
+    planets_present = planet_map.get(house_number, [])
+
+    context = f"--- STRUCTURAL ASTROLOGICAL CONTEXT FOR HOUSE {house_number} ---\n"
+    if house_row:
+        context += f"• Sanskrit Bhava Name: {house_row[0]}\n"
+        context += f"• Significations: {house_row[1]}\n"
+        context += f"• Karaka: {house_row[2]}\n"
+    
+    context += f"• Sign ruling this house: Sign ID {current_sign_id} (Lord: {current_lord})\n"
+    context += f"• Occupying Planets: {', '.join(planets_present) if planets_present else 'None (Empty Bhava)'}\n"
+    
+    for p in planets_present:
+        if p in dignity_map:
+            if current_sign_id == dignity_map[p]["exalted"]:
+                context += f"   - NOTE: {p} is EXALTED in this house.\n"
+            elif current_sign_id == dignity_map[p]["debilitated"]:
+                context += f"   - NOTE: {p} is DEBILITATED in this house.\n"
+                
+    return context
+
+# ==============================================================================
+# CORE VIEW ROUTES
+# ==============================================================================
+
 @app.route('/')
 def home():
     asc_deg, planet_map, house_details, tz_name, tz_offset = calculate_swisseph_chart(1992, 12, 17, "04:55", 26.4525, 87.2718)
     return render_template('index.html', asc_deg=asc_deg, planet_map=planet_map, house_details=house_details, tz_name=tz_name, tz_offset=tz_offset)
 
 
+@app.route('/database-explorer')
+def database_explorer_page():
+    """Renders the main template frame for the database explorer."""
+    return render_template('db_explorer.html')
+
+# ==============================================================================
+# CORE CORE API ENDPOINTS
+# ==============================================================================
+
 @app.route('/api/calculate', methods=['POST'])
 def calculate():
     try:
         data = request.get_json() or {}
-        
         place_name = data.get('place', '').strip()
         year = int(data.get('year', 1992))
         month = int(data.get('month', 12))
@@ -166,16 +207,10 @@ def calculate():
             if location:
                 lat = location.latitude
                 lon = location.longitude
-                
                 address_dict = location.raw.get('address', {})
-                display_place = address_dict.get('city') or \
-                                address_dict.get('town') or \
-                                address_dict.get('village') or \
-                                address_dict.get('suburb') or \
-                                address_dict.get('county') or \
-                                place_name.capitalize()
+                display_place = address_dict.get('city') or address_dict.get('town') or place_name.capitalize()
             else:
-                return jsonify({"status": "error", "message": f"Could not resolve location parameters for: '{place_name}'"}), 400
+                return jsonify({"status": "error", "message": f"Could not resolve location: '{place_name}'"}), 400
         else:
             lat = float(data.get('lat', 26.4525))
             lon = float(data.get('lon', 87.2718))
@@ -201,16 +236,18 @@ def calculate():
 @app.route('/api/house/<int:house_num>')
 def house_details(house_num):
     try:
-        ai_response = run_astrology_crew_analysis(101, house_num)
+        # In production setup, pull these values out of active frontend request headers or active state records
+        asc_deg, planet_map, house_details, tz_name, tz_offset = calculate_swisseph_chart(1992, 12, 17, "04:55", 26.4525, 87.2718)
+        
+        # 1. Gather structural data properties out of local database configurations
+        structured_context = compile_ai_bhava_context(house_num, planet_map, house_details)
+        
+        # 2. Fire direct analysis function to local model pipeline
+        ai_response = run_direct_astrology_analysis(structured_context)
+        
         return jsonify({"status": "success", "ai_interpretation": ai_response})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route('/database-explorer')
-def database_explorer_page():
-    """Renders the main template frame for the database explorer."""
-    return render_template('db_explorer.html')
 
 
 @app.route('/api/db/schema', methods=['GET'])
@@ -242,23 +279,18 @@ def get_table_data():
 
         import sqlite3
         conn = sqlite3.connect('jyotish_core.db')
-        conn.row_factory = sqlite3.Row  # Returns rows as dictionaries
+        conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # 1. Safely pull column headers
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = [col[1] for col in cursor.fetchall()]
 
-        # 2. Get total row metrics
         cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
         total_rows = cursor.fetchone()[0]
 
-        # 3. Stream paginated rows
         offset = (page - 1) * per_page
         cursor.execute(f"SELECT * FROM {table_name} LIMIT {per_page} OFFSET {offset}")
         raw_rows = cursor.fetchall()
-        
-        # Convert row instances to pure dictionaries for JSON transmission
         rows = [dict(row) for row in raw_rows]
         conn.close()
 
@@ -283,57 +315,7 @@ def get_table_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-
-def compile_ai_bhava_context(house_number, planet_map, house_details):
-    """
-    Looks up database reference tables to compile a comprehensive string 
-    of astrological context for CrewAI to ingest.
-    """
-    import sqlite3
-    conn = sqlite3.connect('jyotish_core.db')
-    cursor = conn.cursor()
-    
-    # 1. Fetch House Rules from DB
-    cursor.execute("SELECT sanskrit_name, significations, karaka_planets FROM house_rules WHERE house_number = ?", (house_number,))
-    house_row = cursor.fetchone()
-    
-    # 2. Fetch specific Planet Dignity boundaries
-    cursor.execute("SELECT planet, exalted_sign_id, debilitated_sign_id FROM planetary_dignities")
-    dignity_rows = cursor.fetchall()
-    conn.close()
-    
-    # Build a quick lookup map for exaltations/debilitations
-    dignity_map = {row[0]: {"exalted": row[1], "debilitated": row[2]} for row in dignity_rows}
-
-    # Extract details compiled by the SwissEph calculation loop
-    live_details = house_details.get(house_number, {})
-    current_sign_id = live_details.get('sign_id')
-    current_lord = live_details.get('lord')
-    planets_present = planet_map.get(house_number, [])
-
-    # Assemble our detailed context prompt block
-    context = f"--- CRITICAL STRUCTURAL ASTROLOGICAL CONTEXT FOR HOUSE {house_number} ---\n"
-    if house_row:
-        context += f"• Sanskrit Bhava Name: {house_row[0]}\n"
-        context += f"• Primary Significations: {house_row[1]}\n"
-        context += f"• Natural Significator (Karaka): {house_row[2]}\n"
-    
-    context += f"• Live Calculated Rashi ID ruling this house: {current_sign_id} (Lord: {current_lord})\n"
-    
-    if planets_present:
-        context += f"• Occupying Planets: {', '.join(planets_present)}\n"
-        for p in planets_present:
-            # Check dignity metrics dynamically from the database row data
-            if p in dignity_map:
-                if current_sign_id == dignity_map[p]["exalted"]:
-                    context += f"   - ALERT: {p} is in its EXALTED Sign position here! Strong resource delivery.\n"
-                elif current_sign_id == dignity_map[p]["debilitated"]:
-                    context += f"   - ALERT: {p} is DEBILITATED here. Expect structural friction.\n"
-    else:
-        context += "• Occupying Planets: None (Empty Bhava - focus primarily on Lord positioning)\n"
-        
-    return context
-
-
 if __name__ == '__main__':
+    # Fixed explicitly to port 5001 to bypass macOS AirPlay listening conflicts
     app.run(debug=True, port=5001)
+
