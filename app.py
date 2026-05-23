@@ -215,31 +215,23 @@ def database_explorer_page():
 
 @app.route('/api/db/schema', methods=['GET'])
 def get_database_schema():
-    """
-    Dynamically scans the database to list all existing tables.
-    Modify the inner logic if you use SQLAlchemy, raw SQLite, or PostgreSQL.
-    """
+    """Dynamically reads the schema tables inside our SQLite Jyotish instance."""
     try:
-        # --- EXAMPLE FOR RAW SQLITE/DATABASE INSPECTION ---
-        # import sqlite3
-        # conn = sqlite3.connect('your_database.db')
-        # cursor = conn.cursor()
-        # cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        # tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
-        # conn.close()
-        
-        # Fallback dummy list for structural illustration/testing
-        tables = ["users", "calculation_history", "crewai_logs", "locations_cache"]
+        import sqlite3
+        conn = sqlite3.connect('jyotish_core.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
+        conn.close()
         
         return jsonify({"status": "success", "tables": tables})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-
 @app.route('/api/db/table-data', methods=['GET'])
 def get_table_data():
-    """Returns dynamic columns, rows, and structural pagination metrics based on selected table."""
+    """Reads real rows dynamically from the selected database table with pagination."""
     try:
         table_name = request.args.get('table', '').strip()
         page = max(1, int(request.args.get('page', 1)))
@@ -248,79 +240,36 @@ def get_table_data():
         if not table_name:
             return jsonify({"status": "error", "message": "No table name provided"}), 400
 
-        # 1. Define distinct, real schemas for each table configuration
-        if table_name == "users":
-            columns = ["user_id", "profile_name", "birth_place", "created_at"]
-            total_rows = 12
-            
-            # Generate realistic user rows
-            dummy_rows = [
-                {"user_id": 1, "profile_name": "Anusuman", "birth_place": "Biratnagar", "created_at": "2026-05-20 10:14"},
-                {"user_id": 2, "profile_name": "Astro Profile Beta", "birth_place": "Kathmandu", "created_at": "2026-05-21 14:22"},
-                {"user_id": 3, "profile_name": "Client Target A", "birth_place": "Dubai", "created_at": "2026-05-22 09:05"},
-            ]
-            # Pad the pagination simulation
-            for i in range(4, total_rows + 1):
-                dummy_rows.append({"user_id": i, "profile_name": f"Anonymous Test #{i}", "birth_place": "Global Cache", "created_at": "2026-05-23 11:00"})
+        import sqlite3
+        conn = sqlite3.connect('jyotish_core.db')
+        conn.row_factory = sqlite3.Row  # Returns rows as dictionaries
+        cursor = conn.cursor()
 
-        elif table_name == "calculation_history":
-            columns = ["calc_id", "timestamp", "input_date", "input_time", "resolved_lagna", "timezone"]
-            total_rows = 24
-            dummy_rows = []
-            
-            start_id = ((page - 1) * per_page) + 1
-            end_id = min(start_id + per_page, total_rows + 1)
-            for idx in range(start_id, end_id):
-                dummy_rows.append({
-                    "calc_id": idx,
-                    "timestamp": "2026-05-23 21:21",
-                    "input_date": "1992-12-17",
-                    "input_time": "04:55",
-                    "resolved_lagna": f"227.412° (Scorpio)",
-                    "timezone": "Asia/Kathmandu (UTC+5.8)"
-                })
+        # 1. Safely pull column headers
+        cursor.execute(f"PRAGMA table_info({table_name})")
+        columns = [col[1] for col in cursor.fetchall()]
 
-        elif table_name == "crewai_logs":
-            columns = ["log_id", "uuid_token", "target_house", "created_at", "status_flag"]
-            total_rows = 45
-            dummy_rows = []
-            
-            start_id = ((page - 1) * per_page) + 1
-            end_id = min(start_id + per_page, total_rows + 1)
-            for idx in range(start_id, end_id):
-                dummy_rows.append({
-                    "log_id": idx,
-                    "uuid_token": f"TX-100{idx}",
-                    "target_house": f"House {((idx - 1) % 12) + 1}",
-                    "created_at": "2026-05-23 21:21",
-                    "status_flag": "SUCCESS" if idx % 5 != 0 else "FAILED"
-                })
+        # 2. Get total row metrics
+        cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+        total_rows = cursor.fetchone()[0]
 
-        elif table_name == "locations_cache":
-            columns = ["cache_id", "queried_place", "resolved_lat", "resolved_lon", "hit_count"]
-            total_rows = 8
-            dummy_rows = [
-                {"cache_id": 1, "queried_place": "Biratnagar", "resolved_lat": 26.4525, "resolved_lon": 87.2718, "hit_count": 14},
-                {"cache_id": 2, "queried_place": "Dubai Festival City", "resolved_lat": 25.2226, "resolved_lon": 55.3591, "hit_count": 32},
-                {"cache_id": 3, "queried_place": "Burjuman, Dubai", "resolved_lat": 25.2532, "resolved_lon": 55.3034, "hit_count": 9},
-                {"cache_id": 4, "queried_place": "Kathmandu", "resolved_lat": 27.7172, "resolved_lon": 85.3240, "hit_count": 5}
-            ]
+        # 3. Stream paginated rows
+        offset = (page - 1) * per_page
+        cursor.execute(f"SELECT * FROM {table_name} LIMIT {per_page} OFFSET {offset}")
+        raw_rows = cursor.fetchall()
+        
+        # Convert row instances to pure dictionaries for JSON transmission
+        rows = [dict(row) for row in raw_rows]
+        conn.close()
 
-        # Slice the rows based on the page request parameters
         import math
         total_pages = max(1, math.ceil(total_rows / per_page))
-        
-        # Only slice if we haven't manually pre-sliced the data loop chunks
-        if table_name in ["users", "locations_cache"]:
-            sliced_rows = dummy_rows[(page - 1) * per_page : page * per_page]
-        else:
-            sliced_rows = dummy_rows
 
         return jsonify({
             "status": "success",
             "table": table_name,
             "columns": columns,
-            "rows": sliced_rows,
+            "rows": rows,
             "pagination": {
                 "current_page": page,
                 "per_page": per_page,
@@ -334,89 +283,56 @@ def get_table_data():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
-@app.route('/database-explorer')
-def database_explorer_page():
-    """Renders the main template frame for the database explorer."""
-    return render_template('db_explorer.html')
 
-
-@app.route('/api/db/schema', methods=['GET'])
-def get_database_schema():
+def compile_ai_bhava_context(house_number, planet_map, house_details):
     """
-    Dynamically scans the database to list all existing tables.
-    Modify the inner logic if you use SQLAlchemy, raw SQLite, or PostgreSQL.
+    Looks up database reference tables to compile a comprehensive string 
+    of astrological context for CrewAI to ingest.
     """
-    try:
-        # --- EXAMPLE FOR RAW SQLITE/DATABASE INSPECTION ---
-        # import sqlite3
-        # conn = sqlite3.connect('your_database.db')
-        # cursor = conn.cursor()
-        # cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        # tables = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_')]
-        # conn.close()
-        
-        # Fallback dummy list for structural illustration/testing
-        tables = ["users", "calculation_history", "crewai_logs", "locations_cache"]
-        
-        return jsonify({"status": "success", "tables": tables})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    import sqlite3
+    conn = sqlite3.connect('jyotish_core.db')
+    cursor = conn.cursor()
+    
+    # 1. Fetch House Rules from DB
+    cursor.execute("SELECT sanskrit_name, significations, karaka_planets FROM house_rules WHERE house_number = ?", (house_number,))
+    house_row = cursor.fetchone()
+    
+    # 2. Fetch specific Planet Dignity boundaries
+    cursor.execute("SELECT planet, exalted_sign_id, debilitated_sign_id FROM planetary_dignities")
+    dignity_rows = cursor.fetchall()
+    conn.close()
+    
+    # Build a quick lookup map for exaltations/debilitations
+    dignity_map = {row[0]: {"exalted": row[1], "debilitated": row[2]} for row in dignity_rows}
 
+    # Extract details compiled by the SwissEph calculation loop
+    live_details = house_details.get(house_number, {})
+    current_sign_id = live_details.get('sign_id')
+    current_lord = live_details.get('lord')
+    planets_present = planet_map.get(house_number, [])
 
-@app.route('/api/db/table-data', methods=['GET'])
-def get_table_data():
-    """Returns dynamic columns, rows, and structural pagination metrics."""
-    try:
-        table_name = request.args.get('table', '').strip()
-        page = max(1, int(request.args.get('page', 1)))
-        per_page = max(1, int(request.args.get('limit', 10)))
+    # Assemble our detailed context prompt block
+    context = f"--- CRITICAL STRUCTURAL ASTROLOGICAL CONTEXT FOR HOUSE {house_number} ---\n"
+    if house_row:
+        context += f"• Sanskrit Bhava Name: {house_row[0]}\n"
+        context += f"• Primary Significations: {house_row[1]}\n"
+        context += f"• Natural Significator (Karaka): {house_row[2]}\n"
+    
+    context += f"• Live Calculated Rashi ID ruling this house: {current_sign_id} (Lord: {current_lord})\n"
+    
+    if planets_present:
+        context += f"• Occupying Planets: {', '.join(planets_present)}\n"
+        for p in planets_present:
+            # Check dignity metrics dynamically from the database row data
+            if p in dignity_map:
+                if current_sign_id == dignity_map[p]["exalted"]:
+                    context += f"   - ALERT: {p} is in its EXALTED Sign position here! Strong resource delivery.\n"
+                elif current_sign_id == dignity_map[p]["debilitated"]:
+                    context += f"   - ALERT: {p} is DEBILITATED here. Expect structural friction.\n"
+    else:
+        context += "• Occupying Planets: None (Empty Bhava - focus primarily on Lord positioning)\n"
         
-        if not table_name:
-            return jsonify({"status": "error", "message": "No table name provided"}), 400
-
-        # --- EXAMPLE ARCHITECTURE FOR DYNAMIC FETCH & PAGINATION ---
-        # offset = (page - 1) * per_page
-        # cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
-        # total_rows = cursor.fetchone()[0]
-        # cursor.execute(f"PRAGMA table_info({table_name})") # For column headers
-        # columns = [col[1] for col in cursor.fetchall()]
-        # cursor.execute(f"SELECT * FROM {table_name} LIMIT {per_page} OFFSET {offset}")
-        # rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-        # Simulated mockup telemetry profiles for initial verification
-        columns = ["id", "uuid_token", "created_at", "status_flag"] if "log" in table_name else ["id", "meta_label", "payload_string", "execution_ms"]
-        
-        # Create mockup rows to verify pagination calculations
-        total_rows = 45
-        dummy_rows = []
-        start_id = ((page - 1) * per_page) + 1
-        end_id = min(start_id + per_page, total_rows + 1)
-        
-        for idx in range(start_id, end_id):
-            if "log" in table_name:
-                dummy_rows.append({"id": idx, "uuid_token": f"TX-{1000+idx}", "created_at": "2026-05-23", "status_flag": "SUCCESS"})
-            else:
-                dummy_rows.append({"id": idx, "meta_label": f"Record Matrix Slot {idx}", "payload_string": "Data Blob Data...", "execution_ms": 14.2})
-
-        import math
-        total_pages = math.ceil(total_rows / per_page)
-
-        return jsonify({
-            "status": "success",
-            "table": table_name,
-            "columns": columns,
-            "rows": dummy_rows,
-            "pagination": {
-                "current_page": page,
-                "per_page": per_page,
-                "total_rows": total_rows,
-                "total_pages": total_pages,
-                "has_next": page < total_pages,
-                "has_prev": page > 1
-            }
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return context
 
 
 if __name__ == '__main__':
