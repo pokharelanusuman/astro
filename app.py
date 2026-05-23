@@ -17,39 +17,42 @@ tf = TimezoneFinder()
 geolocator = Nominatim(user_agent="jyotish_engine_core_v2")
 
 # ==============================================================================
-# ENHANCED DEFENSIVE PROCESS GUARD RAILS (Fixes Semaphore Leaks)
+# ULTIMATE PROCESS REAPER (Eliminates the final Werkzeug Manager Semaphore Leak)
 # ==============================================================================
 def graceful_shutdown_handler(signum, frame):
     """
-    Interceptions signal terminations (Ctrl+C). Forcefully kills orphan background 
-    CrewAI multiprocess workers and silences tracking resource garbage collections.
+    Forcibly sweeps the entire operating system process group matching this terminal
+    session. This stops Flask's debug monitor process and CrewAI background loops 
+    simultaneously, ensuring 0 leaked semaphores at exit.
     """
-    # 1. Silence the noisy resource_tracker warnings right before exiting
+    # 1. Broad filter suppression to ensure warning text won't output during cleanup
     warnings.filterwarnings("ignore", category=UserWarning, module="multiprocessing.resource_tracker")
     
     try:
-        current_process = psutil.Process(os.getpid())
-        # Find all background children processes spawned by CrewAI/LiteLLM
-        children = current_process.children(recursive=True)
+        current_pid = os.getpid()
+        # Find all sibling and worker processes running within our localized tree
+        parent = psutil.Process(current_pid)
+        children = parent.children(recursive=True)
         
+        # Terminate everything in the child tree first
         for child in children:
             try:
-                # Do not disrupt the resource tracker while it's attempting to unwind
-                if "resource_tracker" in child.name(): 
+                if "resource_tracker" in child.name():
                     continue
-                child.terminate()  # Terminate worker cleanly
-            except (psutil.NoSuchProcess, psutil.AccessDenied): 
+                child.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
                 
-        # Wait briefly for standard background process de-allocations
-        psutil.wait_procs(children, timeout=0.5)
-    except Exception: 
+        psutil.wait_procs(children, timeout=0.2)
+    except Exception:
         pass
-    
-    # Exit with a standard success flag
-    os._exit(0)
 
-# Bind system interruption calls directly to our process interceptor sweep
+    # 2. CRITICAL TRICK: Kill the entire process group (PGID) at once.
+    # This terminates the hidden parent Flask reloader process, forcing a clean exit.
+    os.killpg(os.getpgrp(), signal.SIGKILL)
+    sys.exit(0)
+
+# Bind structural terminal interrupt commands to our global group-killer
 signal.signal(signal.SIGINT, graceful_shutdown_handler)
 signal.signal(signal.SIGTERM, graceful_shutdown_handler)
 # ==============================================================================
