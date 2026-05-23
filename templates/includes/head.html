@@ -1,0 +1,169 @@
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ Jyotish Core Intelligence Dashboard</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: { 
+                    slate: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 800: '#1e293b', 950: '#0f172a' } 
+                }
+            }
+        }
+    }
+</script>
+
+<script>
+    let activeHouse = null;
+
+    function toggleHouseTree(houseNum) {
+        if (activeHouse && activeHouse !== houseNum) {
+            const oldBranch = document.getElementById(`branch-container-${activeHouse}`);
+            if (oldBranch) oldBranch.classList.add('hidden');
+            
+            const oldCard = document.getElementById(`house-card-${activeHouse}`);
+            if (oldCard) {
+                oldCard.classList.remove('ring-2', 'ring-indigo-600', 'bg-white');
+                oldCard.classList.add('bg-slate-50');
+            }
+        }
+
+        const container = document.getElementById(`branch-container-${houseNum}`);
+        const card = document.getElementById(`house-card-${houseNum}`);
+        
+        if (container && container.classList.contains('hidden')) {
+            container.classList.remove('hidden');
+            if (card) {
+                card.classList.remove('bg-slate-50');
+                card.classList.add('ring-2', 'ring-indigo-600', 'bg-white');
+            }
+            activeHouse = houseNum;
+            
+            const treeLog = document.getElementById('tree-container');
+            if (treeLog) {
+                treeLog.innerText = `House ${houseNum} Core Node Structural Parameters Loaded.\n- Rashi ID Placement Active\n- Planet Longitude Intersections Calculated Match`;
+            }
+        } else if (container) {
+            container.classList.add('hidden');
+            if (card) {
+                card.classList.remove('ring-2', 'ring-indigo-600', 'bg-white');
+                card.classList.add('bg-slate-50');
+            }
+            activeHouse = null;
+        }
+    }
+
+    async function triggerCrewAIAnalysis(event, houseNum) {
+        event.stopPropagation();
+        const aiContainer = document.getElementById('ai-container');
+        if (!aiContainer) return;
+
+        aiContainer.innerHTML = `
+            <div class="flex items-center gap-3 text-indigo-700 font-mono text-xs p-4 bg-indigo-50 border border-indigo-200 rounded-xl w-full">
+                <svg class="animate-spin h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Spawning CrewAI Orchestrator Pipeline. Local LLM analyzing House ${houseNum} branches...</span>
+            </div>`;
+
+        try {
+            const response = await fetch(`/api/house/${houseNum}`);
+            const data = await response.json();
+            if (data.status === 'success') {
+                aiContainer.innerHTML = `<div class="prose prose-slate text-xs sm:text-sm text-slate-800 font-sans leading-relaxed w-full">${data.ai_interpretation}</div>`;
+            } else {
+                aiContainer.innerHTML = `<span class="text-xs font-mono text-red-600">Analysis pipeline exception: ${data.message}</span>`;
+            }
+        } catch (err) {
+            aiContainer.innerHTML = `<span class="text-xs font-mono text-red-600">Backend connectivity structural error: ${err}</span>`;
+        }
+    }
+
+    async function calculateNewChart(formData = {}) {
+        try {
+            const response = await fetch('/api/calculate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                const signNames = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"];
+                
+                // Update Diagnostic Telemetry Fields with detected timestamp parameters
+                const prefix = data.tz_offset >= 0 ? "+" : "";
+                
+                const timeLog = document.getElementById('telemetry-time');
+                if (timeLog) {
+                    timeLog.textContent = `${formData.year}-${formData.month}-${formData.day} @ ${formData.time} Local`;
+                }
+                
+                // Maps the specific input place name alongside its true UTC math format
+                const tzLog = document.getElementById('telemetry-tz');
+                if (tzLog) {
+                    tzLog.textContent = `${data.display_place} (UTC${prefix}${data.tz_offset.toFixed(2)})`;
+                }
+                
+                // Render dynamically looked up location coordinates to telemetry panel
+                const geoLog = document.getElementById('telemetry-geo');
+                if (geoLog) {
+                    geoLog.textContent = `LAT: ${data.resolved_lat.toFixed(4)} | LON: ${data.resolved_lon.toFixed(4)}`;
+                }
+                
+                const ascSignIndex = Math.floor(data.asc_deg / 30);
+                const fullAscString = `${data.asc_deg.toFixed(4)}° (${signNames[ascSignIndex]})`;
+                
+                if (document.getElementById('controls-asc-display')) {
+                    document.getElementById('controls-asc-display').innerText = fullAscString;
+                }
+                if (document.getElementById('asc-display')) {
+                    document.getElementById('asc-display').innerText = `${data.asc_deg.toFixed(4)}°`;
+                }
+
+                // Loop through and redraw chart nodes inside chart.html modular include components
+                for (let h = 1; h <= 12; h++) {
+                    const details = data.house_details[h];
+                    
+                    const cardHeader = document.querySelector(`#house-card-${h} .sign-label`);
+                    if (cardHeader) {
+                        cardHeader.textContent = `${signNames[details.sign_id - 1]} (${details.sign_id})`;
+                    }
+
+                    const lordElement = document.getElementById(`lord-display-${h}`);
+                    const classElement = document.getElementById(`class-display-${h}`);
+                    if (lordElement) lordElement.textContent = details.lord;
+                    if (classElement) classElement.textContent = details.classification;
+                    
+                    const planetContainer = document.querySelector(`#house-card-${h} .planet-badge-area`);
+                    if (planetContainer) {
+                        const planets = data.planet_map[h] || [];
+                        if (planets.length > 0) {
+                            planetContainer.innerHTML = planets.map(p => `
+                                <span class="text-[10px] font-mono font-bold bg-white text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md shadow-sm">
+                                    🪐 ${p.substring(0, 3)}
+                                </span>
+                            `).join('');
+                        } else {
+                            planetContainer.innerHTML = `<span class="text-[10px] font-mono text-slate-400 italic flex items-center">Empty House</span>`;
+                        }
+                    }
+                }
+            } else {
+                alert("Calculation Engine Failure: " + data.message);
+            }
+        } catch (err) {
+            console.error("Failed to sync calculation matrix updates:", err);
+        }
+    }
+</script>
+
+<style>
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: rgba(79, 70, 229, 0.2); border-radius: 3px; }
+</style>

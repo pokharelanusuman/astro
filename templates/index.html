@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% include 'includes/head.html' %}
+</head>
+<body class="bg-white text-slate-800 min-h-screen font-sans antialiased selection:bg-indigo-100">
+
+    <header class="w-full border-b border-slate-200 bg-slate-50/50 backdrop-blur-sm sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
+        <h1 class="text-sm font-black tracking-widest text-slate-900 uppercase font-mono">⚡ Jyotish Core Intelligence</h1>
+        <span class="text-[10px] font-mono font-bold px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">SWISSEPH ACTIVE</span>
+    </header>
+
+    <section class="max-w-7xl mx-auto px-6 pt-6">
+        {% include 'includes/controls.html' %}
+    </section>
+
+    <main class="max-w-7xl mx-auto p-6 flex flex-col gap-8">
+        <section class="flex flex-col gap-4">
+            <h2 class="text-xs font-bold tracking-widest text-slate-400 uppercase font-mono px-1">Structural Node Grid Matrix</h2>
+            {% include 'includes/chart.html' %}
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div class="lg:col-span-4">
+                <div class="border border-slate-200 bg-slate-50 rounded-2xl p-5 shadow-sm">
+                    <h3 class="text-[10px] font-bold tracking-widest text-slate-400 uppercase font-mono mb-3 border-b border-slate-200 pb-2">Telemetry Log</h3>
+                    <div id="tree-container" class="text-xs font-mono text-slate-600 whitespace-pre-line leading-relaxed italic">
+                        Select a target component house grid chip element from the matrix overview to analyze layout parameters...
+                    </div>
+                </div>
+            </div>
+            <div class="lg:col-span-8">
+                <div class="border border-slate-200 bg-slate-50 rounded-2xl p-5 shadow-sm min-h-[220px] flex flex-col">
+                    <h3 class="text-[10px] font-bold tracking-widest text-slate-400 uppercase font-mono mb-3 border-b border-slate-200 pb-2">Active CrewAI Orchestration Output</h3>
+                    <div id="ai-container" class="text-xs text-slate-500 font-mono flex items-center justify-center h-full flex-1 italic text-center">
+                        Select a target node above and execute the active agent routine to view advanced telemetry diagnostics...
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+</body>
+</html>
