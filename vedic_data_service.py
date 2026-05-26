@@ -5,6 +5,7 @@ Replaces hardcoded constants with database queries
 
 import sqlite3
 import logging
+import threading
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
@@ -17,25 +18,27 @@ class VedicDataService:
     def __init__(self, db_path='jyotish_core.db'):
         """Initialize the service with database path"""
         self.db_path = db_path
-        self._connection = None
-        self._cache = {}
+        self._local = threading.local()  # Thread-local storage
+        self._cache = {}  # Shared cache
     
     def get_connection(self):
-        """Get SQLite connection"""
+        """Get thread-safe SQLite connection"""
         try:
-            if self._connection is None:
-                self._connection = sqlite3.connect(self.db_path)
-                self._connection.row_factory = sqlite3.Row
-            return self._connection
+            # Check if this thread already has a connection
+            if not hasattr(self._local, 'connection') or self._local.connection is None:
+                # Create a new connection for this thread
+                self._local.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+                self._local.connection.row_factory = sqlite3.Row
+            return self._local.connection
         except sqlite3.Error as e:
             logger.error(f"Database connection error: {e}")
             raise
     
     def close(self):
-        """Close database connection"""
-        if self._connection:
-            self._connection.close()
-            self._connection = None
+        """Close database connection for current thread"""
+        if hasattr(self._local, 'connection') and self._local.connection:
+            self._local.connection.close()
+            self._local.connection = None
     
     # =========================================================================
     # PLANETS - All 9 planets with complete information

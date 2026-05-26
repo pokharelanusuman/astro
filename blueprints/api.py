@@ -24,19 +24,39 @@ def health_check():
 @api_bp.route('/calculate', methods=['POST'])
 @log_request
 @handle_errors
-@require_json('year', 'month', 'day', 'hour', 'latitude', 'longitude')
 def calculate_chart():
-    """Calculate a Vedic astrology chart"""
+    """Calculate a Vedic astrology chart
+    
+    Accepts either:
+    - place (string) with year, month, day, hour - will geocode place to get coordinates
+    - latitude, longitude with year, month, day, hour
+    """
     data = request.get_json()
     
     try:
-        # Validate input
+        # Required fields
         year = int(data['year'])
         month = int(data['month'])
         day = int(data['day'])
-        hour = data['hour']
-        lat = float(data['latitude'])
-        lon = float(data['longitude'])
+        hour = data.get('hour', '12:00')  # Default to noon if not provided
+        
+        # Get coordinates - either directly or by geocoding place
+        lat = None
+        lon = None
+        place_name = None
+        
+        if 'latitude' in data and 'longitude' in data:
+            # Direct coordinates provided
+            lat = float(data['latitude'])
+            lon = float(data['longitude'])
+        elif 'place' in data:
+            # Place name provided - geocode it
+            place_name = data['place']
+            lat, lon = chart_service.get_coordinates_from_place(place_name)
+            if lat is None or lon is None:
+                return APIResponse.bad_request(f"Could not find coordinates for place: {place_name}")
+        else:
+            return APIResponse.bad_request("Must provide either 'latitude'/'longitude' or 'place'")
         
         # Validate ranges
         if not (1 <= month <= 12) or not (1 <= day <= 31):

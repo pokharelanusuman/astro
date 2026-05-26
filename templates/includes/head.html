@@ -84,65 +84,83 @@
 
     async function calculateNewChart(formData = {}) {
         try {
+            // Transform form data to API format
+            const apiPayload = {
+                year: formData.year,
+                month: formData.month,
+                day: formData.day,
+                hour: formData.time || "12:00",
+                place: formData.place
+            };
+            
             const response = await fetch('/api/calculate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(formData)
+                body: JSON.stringify(apiPayload)
             });
-            const data = await response.json();
+            const apiResponse = await response.json();
             
-            if (data.status === 'success') {
+            if (apiResponse.status === 'success') {
+                const chartData = apiResponse.data;
                 const signNames = ["Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo", "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"];
                 
-                // Update Diagnostic Telemetry Fields with detected timestamp parameters
-                const prefix = data.tz_offset >= 0 ? "+" : "";
+                // Parse timezone to get offset (e.g., "Asia/Kathmandu" -> +5.75)
+                const tzString = chartData.timezone || "UTC";
+                let tzOffset = 0;
+                try {
+                    const date = new Date();
+                    const formatter = new Intl.DateTimeFormat('en-US', {
+                        timeZone: tzString,
+                        hour12: false,
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    // This is approximate - using the birth date for more accuracy
+                    const birthDate = new Date(chartData.birth_data.year, chartData.birth_data.month - 1, chartData.birth_data.day);
+                    tzOffset = (new Date().getTimezoneOffset() - new Date(formatter.format(birthDate)).getTimezoneOffset()) / 60;
+                } catch (e) {
+                    tzOffset = 0;
+                }
                 
+                const prefix = tzOffset >= 0 ? "+" : "";
+                const lat = chartData.birth_data.latitude;
+                const lon = chartData.birth_data.longitude;
+                const ascDeg = chartData.ascendant_degree;
+                
+                // Update Diagnostic Telemetry Fields
                 const timeLog = document.getElementById('telemetry-time');
                 if (timeLog) {
                     timeLog.textContent = `${formData.year}-${formData.month}-${formData.day} @ ${formData.time} Local`;
                 }
                 
-                // Maps the specific input place name alongside its true UTC math format
                 const tzLog = document.getElementById('telemetry-tz');
                 if (tzLog) {
-                    tzLog.textContent = `${data.display_place} (UTC${prefix}${data.tz_offset.toFixed(2)})`;
+                    tzLog.textContent = `${tzString} (UTC${prefix}${tzOffset.toFixed(2)})`;
                 }
                 
-                // Render dynamically looked up location coordinates to telemetry panel
                 const geoLog = document.getElementById('telemetry-geo');
                 if (geoLog) {
-                    geoLog.textContent = `LAT: ${data.resolved_lat.toFixed(4)} | LON: ${data.resolved_lon.toFixed(4)}`;
+                    geoLog.textContent = `LAT: ${lat.toFixed(4)} | LON: ${lon.toFixed(4)}`;
                 }
                 
-                const ascSignIndex = Math.floor(data.asc_deg / 30);
-                const fullAscString = `${data.asc_deg.toFixed(4)}° (${signNames[ascSignIndex]})`;
+                const ascSignIndex = Math.floor(ascDeg / 30);
+                const fullAscString = `${ascDeg.toFixed(4)}° (${signNames[ascSignIndex]})`;
                 
                 if (document.getElementById('controls-asc-display')) {
                     document.getElementById('controls-asc-display').innerText = fullAscString;
                 }
                 if (document.getElementById('asc-display')) {
-                    document.getElementById('asc-display').innerText = `${data.asc_deg.toFixed(4)}°`;
+                    document.getElementById('asc-display').innerText = `${ascDeg.toFixed(4)}°`;
                 }
 
-                // Loop through and redraw chart nodes inside chart.html modular include components
+                // Update house cards with planet mapping
                 for (let h = 1; h <= 12; h++) {
-                    const details = data.house_details[h];
-                    
-                    const cardHeader = document.querySelector(`#house-card-${h} .sign-label`);
-                    if (cardHeader) {
-                        cardHeader.textContent = `${signNames[details.sign_id - 1]} (${details.sign_id})`;
-                    }
-
-                    const lordElement = document.getElementById(`lord-display-${h}`);
-                    const classElement = document.getElementById(`class-display-${h}`);
-                    if (lordElement) lordElement.textContent = details.lord;
-                    if (classElement) classElement.textContent = details.classification;
+                    const planetsInHouse = chartData.house_mapping[h.toString()] || [];
                     
                     const planetContainer = document.querySelector(`#house-card-${h} .planet-badge-area`);
                     if (planetContainer) {
-                        const planets = data.planet_map[h] || [];
-                        if (planets.length > 0) {
-                            planetContainer.innerHTML = planets.map(p => `
+                        if (planetsInHouse.length > 0) {
+                            planetContainer.innerHTML = planetsInHouse.map(p => `
                                 <span class="text-[10px] font-mono font-bold bg-white text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md shadow-sm">
                                     🪐 ${p.substring(0, 3)}
                                 </span>
@@ -153,7 +171,7 @@
                     }
                 }
             } else {
-                alert("Calculation Engine Failure: " + data.message);
+                alert("Calculation Engine Failure: " + apiResponse.message);
             }
         } catch (err) {
             console.error("Failed to sync calculation matrix updates:", err);

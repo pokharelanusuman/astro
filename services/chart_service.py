@@ -162,3 +162,21 @@ class ChartCalculationService:
             return f"{display_place}, {country}"
         except Exception:
             return f"{lat:.4f}°, {lon:.4f}°"
+    
+    def get_coordinates_from_place(self, place_name):
+        """Get coordinates from a place name using Nominatim geocoding
+        
+        Args:
+            place_name: Name of place/city
+            
+        Returns:
+            tuple: (latitude, longitude) or (None, None) if not found
+        """
+        try:
+            location = geolocator.geocode(place_name)
+            if location:
+                return location.latitude, location.longitude
+            return None, None
+        except Exception as e:
+            print(f"Geocoding error for '{place_name}': {e}")
+            return None, None
