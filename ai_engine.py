@@ -1,7 +1,11 @@
 import requests
 import json
-import re # 1. Import re
+import re
+from config import get_config
 from knowledge_manager import get_system_prompt_extension, update_knowledge_from_ai
+
+# Load configuration
+config = get_config()
 
 def run_direct_astrology_analysis(house_context_string):
     # ... (Keep your prompt setup code as is)
@@ -10,20 +14,20 @@ def run_direct_astrology_analysis(house_context_string):
     full_system_prompt = f"{base_system_prompt}\n\n{memory_extension}"
     user_prompt = f"Please provide a deep interpretation based on this structural data:\n\n{house_context_string}"
 
-    url = "http://localhost:11434/api/generate"
+    url = f"{config.OLLAMA_URL}/api/generate"
     payload = {
-        "model": "mistral:latest",
+        "model": config.OLLAMA_MODEL,
         "prompt": f"{full_system_prompt}\n\n{user_prompt}",
         "stream": False
     }
 
     try:
-        response = requests.post(url, json=payload, timeout=120)
+        response = requests.post(url, json=payload, timeout=config.OLLAMA_TIMEOUT)
         
         if response.status_code == 200:
             full_text = response.json().get("response", "Error: No text returned.")
             
-            # 2. Extract and Strip 'NEEDED_LEARNING'
+            # Extract and Strip 'NEEDED_LEARNING'
             # This regex looks for 'NEEDED_LEARNING:' and everything after it
             pattern = r"NEEDED_LEARNING:(.*)"
             match = re.search(pattern, full_text, re.DOTALL)
@@ -38,7 +42,7 @@ def run_direct_astrology_analysis(house_context_string):
             return cleaned_analysis
         
         elif response.status_code == 404:
-            return "AI Generation Error: Model 'mistral:latest' not found."
+            return f"AI Generation Error: Model '{config.OLLAMA_MODEL}' not found."
         else:
             return f"AI Generation Error: Code {response.status_code}"
             
