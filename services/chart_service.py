@@ -19,9 +19,27 @@ vds = get_vedic_data_service()
 class ChartCalculationService:
     """Service for computing Vedic astrology charts"""
     
-    def __init__(self):
-        swe.set_sid_mode(swe.SIDM_LAHIRI)
-        self.calc_flag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
+    def __init__(self, zodiac_mode=None):
+        """Initialize chart service with optional zodiac mode override.
+        
+        Args:
+            zodiac_mode: 'tropical' or 'sidereal'. If None, uses config default.
+        """
+        # Determine zodiac mode
+        mode = (zodiac_mode or config.ZODIAC_MODE).lower()
+        if mode not in ('tropical', 'sidereal'):
+            raise ValueError(f"zodiac_mode must be 'tropical' or 'sidereal', got '{mode}'")
+        
+        self.zodiac_mode = mode
+        
+        # Set calculation flags based on mode
+        if mode == 'sidereal':
+            # Use FLG_SIDEREAL flag for planet calculations
+            # House cusps will be adjusted separately by subtracting ayanamsa
+            self.calc_flag = swe.FLG_SWIEPH | swe.FLG_SIDEREAL
+        else:
+            # Tropical: use SWIEPH only (no sidereal flag)
+            self.calc_flag = swe.FLG_SWIEPH
     
     def calculate_chart(self, year, month, day, hour_str, lat, lon):
         """
@@ -35,9 +53,12 @@ class ChartCalculationService:
         Returns:
             dict: Chart data with planets, houses, and house mapping
         """
+
+        print(f"what we are getting chart for {year}-{month}-{day} {hour_str} at ({lat}, {lon})")
         # Parse birth time
         h_part, m_part = self._parse_time(hour_str)
         
+        print(f"Parsed time: {h_part}:{m_part}")
         # Get timezone and convert to UTC
         tz_name = tf.timezone_at(lng=lon, lat=lat) or "UTC"
         local_dt = datetime(year, month, day, h_part, m_part, 0, tzinfo=ZoneInfo(tz_name))
@@ -49,10 +70,22 @@ class ChartCalculationService:
             utc_dt.hour + utc_dt.minute / 60.0
         )
         
-        # Calculate house cusps and ascendant
+        # Calculate house cusps and ascendant (always computed in tropical)
+        # Use byte string house system code (equal houses 'E') as required by swisseph
         cusps, ascmc = swe.houses(jd_ut, lat, lon, b'E')
-        ascendant_degree = ascmc[0]
+        ascendant_degree_tropical = ascmc[0]
         
+        # For sidereal mode, adjust by ayanamsa (precession offset)
+        if self.zodiac_mode == 'sidereal':
+            ayanamsa = swe.get_ayanamsa(jd_ut)
+            ascendant_degree = (ascendant_degree_tropical - ayanamsa) % 360
+            cusps = tuple((c - ayanamsa) % 360 for c in cusps)
+        else:
+            ascendant_degree = ascendant_degree_tropical
+        
+        print(f"Calculated JD: {jd_ut}, Ascendant (tropical): {ascendant_degree_tropical}°, Ascendant ({self.zodiac_mode}): {ascendant_degree}°")
+        print(f"House cusps: {cusps[:12]}")
+
         # Calculate planetary positions
         planets_data = {}
         planets_list = vds.get_planet_names_list()  # Load from database
@@ -62,13 +95,15 @@ class ChartCalculationService:
         
         # Assign planets to houses
         house_mapping = self._assign_planets_to_houses(planets_data, ascendant_degree)
-        
+        print(f"House mapping: {house_mapping}")
+
         return {
             "ascendant_degree": ascendant_degree,
             "ascendant_rashi": self._get_rashi_from_degree(ascendant_degree),
             "planets": planets_data,
             "house_mapping": house_mapping,
             "timezone": tz_name,
+            "zodiac_mode": self.zodiac_mode,
             "jd_ut": jd_ut,
             "cusps": [float(c) for c in cusps[:12]]
         }
@@ -76,15 +111,33 @@ class ChartCalculationService:
     def _parse_time(self, hour_str):
         """Parse time string or decimal to hour and minute"""
         try:
-            if ":" in str(hour_str):
-                h_part, m_part = map(int, str(hour_str).split(":"))
+            s = str(hour_str).strip()
+            if not s:
+                return 0, 0
+
+            # Handle am/pm notation like '04:55am' or '4:55 PM'
+            ampm = None
+            lower = s.lower()
+            if lower.endswith('am') or lower.endswith('pm'):
+                ampm = lower[-2:]
+                s = s[:-2].strip()
+
+            if ":" in s:
+                h_part, m_part = map(int, s.split(":"))
             else:
-                hour_decimal = float(hour_str)
+                hour_decimal = float(s)
                 h_part = int(hour_decimal)
                 m_part = int(round((hour_decimal - h_part) * 60))
+
+            if ampm:
+                if ampm == 'pm' and h_part < 12:
+                    h_part += 12
+                if ampm == 'am' and h_part == 12:
+                    h_part = 0
+
             return h_part, m_part
         except Exception:
-            return 4, 0  # Default to 4:00 AM
+            return 0, 0
     
     def _get_planet_position(self, jd_ut, planet_name):
         """Calculate a planet's position in the zodiac"""

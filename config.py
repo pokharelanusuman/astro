@@ -39,6 +39,11 @@ class Config:
     ENABLE_AI_ANALYSIS = os.getenv('ENABLE_AI_ANALYSIS', 'True').lower() == 'true'
     ENABLE_KNOWLEDGE_UPDATE = os.getenv('ENABLE_KNOWLEDGE_UPDATE', 'True').lower() == 'true'
     
+    # Astrology Calculation Settings
+    ZODIAC_MODE = os.getenv('ZODIAC_MODE', 'tropical').lower()  # 'tropical' or 'sidereal'
+    if ZODIAC_MODE not in ('tropical', 'sidereal'):
+        raise ValueError(f"ZODIAC_MODE must be 'tropical' or 'sidereal', got '{ZODIAC_MODE}'")
+    
     # Cache Settings
     CACHE_TIMEOUT = int(os.getenv('CACHE_TIMEOUT', 3600))
 

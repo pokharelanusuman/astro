@@ -2,23 +2,23 @@
     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 items-end">
         <div>
             <label class="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1">Year</label>
-            <input type="number" id="input-year" value="1992" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
+            <input type="number" id="input-year" value="{{ default_chart.year }}" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
         </div>
         <div>
             <label class="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1">Month</label>
-            <input type="number" id="input-month" value="12" min="1" max="12" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
+            <input type="number" id="input-month" value="{{ default_chart.month }}" min="1" max="12" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
         </div>
         <div>
             <label class="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1">Day</label>
-            <input type="number" id="input-day" value="17" min="1" max="31" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
+            <input type="number" id="input-day" value="{{ default_chart.day }}" min="1" max="31" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
         </div>
         <div>
             <label class="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1">Birth Time</label>
-            <input type="time" id="input-time" value="04:00" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
+            <input type="time" id="input-time" value="{{ default_chart.time }}" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500">
         </div>
         <div class="lg:col-span-2">
             <label class="block text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 mb-1">Target Place / City</label>
-            <input type="text" id="input-place" value="Kathmandu" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500" placeholder="e.g. Dubai, Kathmandu">
+            <input type="text" id="input-place" value="{{ default_chart.place }}" class="w-full bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-mono text-slate-700 focus:outline-none focus:border-indigo-500" placeholder="e.g. Dubai, Kathmandu">
         </div>
     </div>
 

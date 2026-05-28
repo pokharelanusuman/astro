@@ -4,9 +4,14 @@ from utils import APIResponse, handle_errors, require_json, log_request
 from services.chart_service import ChartCalculationService
 from services.db_service import DatabaseService
 from services.ai_service import AIAnalysisService
+from vedic_data_service import get_vedic_data_service
+from config import get_config
+
+config = get_config()
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
-chart_service = ChartCalculationService()
+# Default chart service (used for other endpoints, not /calculate which creates per-request instances)
+chart_service = ChartCalculationService(zodiac_mode=config.ZODIAC_MODE)
 db_service = DatabaseService()
 ai_service = AIAnalysisService()
 
@@ -30,6 +35,9 @@ def calculate_chart():
     Accepts either:
     - place (string) with year, month, day, hour - will geocode place to get coordinates
     - latitude, longitude with year, month, day, hour
+    
+    Optional:
+    - zodiac_mode: 'tropical' (default) or 'sidereal'
     """
     data = request.get_json()
     
@@ -38,7 +46,7 @@ def calculate_chart():
         year = int(data['year'])
         month = int(data['month'])
         day = int(data['day'])
-        hour = data.get('hour', '12:00')  # Default to noon if not provided
+        hour = data.get('hour') or data.get('time') or '12:00'  # Accept both hour and time
         
         # Get coordinates - either directly or by geocoding place
         lat = None
@@ -64,23 +72,50 @@ def calculate_chart():
         if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
             raise ValueError("Invalid coordinates")
         
+        # Get zodiac mode from request or use default
+        zodiac_mode = data.get('zodiac_mode', config.ZODIAC_MODE).lower()
+        if zodiac_mode not in ('tropical', 'sidereal'):
+            return APIResponse.bad_request(f"zodiac_mode must be 'tropical' or 'sidereal', got '{zodiac_mode}'")
+        
+        # Create service with specified zodiac mode
+        chart_svc = ChartCalculationService(zodiac_mode=zodiac_mode)
+        
         # Calculate chart
-        chart = chart_service.calculate_chart(year, month, day, hour, lat, lon)
-        
-        # Get location string
-        location = chart_service.get_location_string(lat, lon)
-        
+        chart = chart_svc.calculate_chart(year, month, day, hour, lat, lon)
+
+        # Resolve human-readable location (prefer input place when provided)
+        resolved_location = chart_svc.get_location_string(lat, lon)
+
+        # Build house details similarly to initial page payload
+        vds = get_vedic_data_service()
+        houses = vds.get_all_houses() or []
+        house_details_payload = {}
+        for i, cusp in enumerate(chart.get('cusps', []), start=1):
+            rashi = vds.get_rashi_from_degree(cusp)
+            house_info = next((h for h in houses if h['house_number'] == i), {})
+            house_details_payload[i] = {
+                'rashi_name': rashi['name'] if rashi else 'Unknown',
+                'classification': house_info.get('name', f'House {i}'),
+                'lord': rashi.get('lord_planet_name') if rashi else 'Unknown'
+            }
+
+        # Normalize mapping keys to strings for consistent client-side consumption
+        planet_map = {str(k): v for k, v in chart.get('house_mapping', {}).items()}
+
         # Add metadata
-        chart['location'] = location
+        chart['location'] = place_name or resolved_location
         chart['birth_data'] = {
             'year': year,
             'month': month,
             'day': day,
             'hour': hour,
             'latitude': lat,
-            'longitude': lon
+            'longitude': lon,
+            'input_place': place_name
         }
-        
+        chart['house_details'] = house_details_payload
+        chart['planet_map'] = planet_map
+
         return APIResponse.success(chart, "Chart calculated successfully")
         
     except ValueError as e:

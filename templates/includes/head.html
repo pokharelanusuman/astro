@@ -82,14 +82,16 @@
         }
     }
 
-    async function calculateNewChart(formData = {}) {
+    async function calculateNewChart(formData) {
         try {
+            
             // Transform form data to API format
             const apiPayload = {
                 year: formData.year,
                 month: formData.month,
                 day: formData.day,
                 hour: formData.time || "12:00",
+                time: formData.time || "12:00",
                 place: formData.place
             };
             
@@ -140,7 +142,8 @@
                 
                 const geoLog = document.getElementById('telemetry-geo');
                 if (geoLog) {
-                    geoLog.textContent = `LAT: ${lat.toFixed(4)} | LON: ${lon.toFixed(4)}`;
+                    const locName = chartData.location || chartData.birth_data.input_place || formData.place || 'Unknown place';
+                    geoLog.textContent = `${locName} — LAT: ${lat.toFixed(4)} | LON: ${lon.toFixed(4)}`;
                 }
                 
                 const ascSignIndex = Math.floor(ascDeg / 30);
@@ -155,7 +158,7 @@
 
                 // Update house cards with planet mapping
                 for (let h = 1; h <= 12; h++) {
-                    const planetsInHouse = chartData.house_mapping[h.toString()] || [];
+                    const planetsInHouse = (chartData.planet_map && chartData.planet_map[h.toString()]) || (chartData.house_mapping && chartData.house_mapping[h]) || [];
                     
                     const planetContainer = document.querySelector(`#house-card-${h} .planet-badge-area`);
                     if (planetContainer) {
@@ -169,6 +172,11 @@
                             planetContainer.innerHTML = `<span class="text-[10px] font-mono text-slate-400 italic flex items-center">Empty House</span>`;
                         }
                     }
+                }
+
+                // Pass updated chart data to footer.js for house detail updates
+                if (typeof handleChartCalculationSuccess === 'function') {
+                    handleChartCalculationSuccess(chartData);
                 }
             } else {
                 alert("Calculation Engine Failure: " + apiResponse.message);

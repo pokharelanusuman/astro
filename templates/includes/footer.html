@@ -4,11 +4,6 @@
 <script>
 // 1. Store the initial page calculation passed directly from Flask Jinja2
 // This converts the Python dictionary into a JavaScript object instantly on page load
-window.initialChartPayload = {
-planet_map: {{ planet_map|tojson }},
-house_details: {{ house_details|tojson }}
-};
-
 // Active state tracking parameters
 let currentActiveHouse = 1;
 let localCalculatedChartData = null;
@@ -128,6 +123,8 @@ try {
 function handleChartCalculationSuccess(payloadData) {
 localCalculatedChartData = payloadData;
 
+console.log("Received new chart data payload:", payloadData);
+
 // Sync the entire left overview matrix components
 for (let h_num = 1; h_num <= 12; h_num++) {
     const planets = payloadData.planet_map[h_num] || [];
@@ -152,10 +149,13 @@ for (let h_num = 1; h_num <= 12; h_num++) {
 switchHouseTab(1);
 }
 
+// Inject the initial chart payload from server-side rendering
+window.initialChartPayload = {{ initial_chart_payload | tojson | safe }} || {};
+
 // Automatically populate and boot the dashboard state using the initial page loads
 document.addEventListener("DOMContentLoaded", () => {
-if (window.initialChartPayload && window.initialChartPayload.house_details) {
-    handleChartCalculationSuccess(window.initialChartPayload);
-}
+    if (window.initialChartPayload && window.initialChartPayload.house_details) {
+        handleChartCalculationSuccess(window.initialChartPayload);
+    }
 });
 </script>
